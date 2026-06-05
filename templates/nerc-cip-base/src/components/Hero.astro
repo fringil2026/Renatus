@@ -1,0 +1,58 @@
+---
+// SECTION VARIANT: "split" (default) | "centered"
+// Variants are how one base template produces visually different client sites.
+import { SITE } from "../config/site";
+interface Props { variant?: "split" | "centered"; }
+const { variant = "split" } = Astro.props;
+const chips = ["CIP-002", "CIP-005", "CIP-007", "CIP-010", "CIP-013", "CIP-015"];
+---
+<section class="relative overflow-hidden border-b border-line">
+  <div class="grid-tex absolute inset-0" aria-hidden="true"></div>
+  <div class="pointer-events-none absolute -right-24 -top-24 h-96 w-96 rounded-full bg-amber/10 blur-3xl" aria-hidden="true"></div>
+
+  {variant === "split" ? (
+    <div class="relative mx-auto grid max-w-6xl gap-12 px-5 py-20 md:grid-cols-[1.15fr_0.85fr] md:py-28">
+      <div>
+        <p class="eyebrow rise rise-1">Registered-entity compliance · {SITE.regions.join(" · ")}</p>
+        <h1 class="rise rise-2 mt-5 font-display text-5xl font-bold uppercase leading-[0.95] tracking-tight md:text-7xl">
+          Audit-ready.<br /><span class="text-amber">Every day of the year.</span>
+        </h1>
+        <p class="rise rise-3 mt-6 max-w-xl text-lg leading-relaxed text-muted">
+          We operate NERC CIP compliance programs for utilities, cooperatives, and independent
+          power producers — evidence, controls, and audit defense run as a managed service,
+          so a data request is a retrieval exercise, not a fire drill.
+        </p>
+        <div class="rise rise-4 mt-9 flex flex-wrap gap-4">
+          <a href="/contact/" class="border border-amber bg-amber px-6 py-3 font-display text-base font-semibold tracking-wide text-ink uppercase transition-colors hover:bg-transparent hover:text-amber">Request a gap assessment</a>
+          <a href="/services/" class="border border-line px-6 py-3 font-display text-base font-semibold tracking-wide uppercase transition-colors hover:border-amber hover:text-amber">View services</a>
+        </div>
+      </div>
+      <div class="rise rise-3 hidden md:block">
+        <div class="border border-line bg-panel p-6">
+          <p class="font-mono text-[0.65rem] tracking-[0.25em] text-muted uppercase">Standards in scope</p>
+          <div class="mt-4 flex flex-wrap gap-2">{chips.map((c) => <span class="cip-chip">{c}</span>)}</div>
+          <div class="rule-tick mt-6 pt-5">
+            <p class="font-mono text-xs leading-relaxed text-muted">
+              CIP-015 Internal Network Security Monitoring became enforceable
+              <span class="text-amber"> 2025-09-02</span>. The expanded EACMS/PACS revision is in
+              development — programs built now should already be sized for it.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  ) : (
+    <div class="relative mx-auto max-w-4xl px-5 py-24 text-center md:py-32">
+      <p class="eyebrow rise rise-1">{SITE.tagline}</p>
+      <h1 class="rise rise-2 mt-5 font-display text-5xl font-bold uppercase leading-[0.95] tracking-tight md:text-7xl">
+        Audit-ready. <span class="text-amber">Every day of the year.</span>
+      </h1>
+      <p class="rise rise-3 mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-muted">
+        NERC CIP programs operated as a managed service for registered entities across {SITE.regions.length} regions.
+      </p>
+      <div class="rise rise-4 mt-9 flex justify-center gap-4">
+        <a href="/contact/" class="border border-amber bg-amber px-6 py-3 font-display font-semibold tracking-wide text-ink uppercase transition-colors hover:bg-transparent hover:text-amber">Request a gap assessment</a>
+      </div>
+    </div>
+  )}
+</section>

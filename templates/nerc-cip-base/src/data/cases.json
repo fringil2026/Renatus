@@ -1,0 +1,23 @@
+[
+  {
+    "sector": "Generation & Transmission Cooperative",
+    "region": "SERC",
+    "title": "From audit findings to a clean follow-up",
+    "body": "A G&T co-op came to us after an audit produced multiple potential noncompliances in CIP-007 patch management and CIP-010 configuration baselines. We rebuilt both control processes around their existing tooling, drafted the mitigation plans, and operated the controls through completion. The follow-up spot check closed with zero findings.",
+    "metric": "0 findings", "metricLabel": "at follow-up spot check"
+  },
+  {
+    "sector": "Independent Power Producer",
+    "region": "Texas RE",
+    "title": "Standing up CIP-013 ahead of procurement deadlines",
+    "body": "An IPP with a lean procurement team needed a supply-chain risk program that wouldn't stall sourcing. We built a tiered vendor assessment workflow and a contract clause library mapped to R1, integrated into their existing purchasing system rather than alongside it.",
+    "metric": "6 weeks", "metricLabel": "from kickoff to operating program"
+  },
+  {
+    "sector": "Municipal Utility",
+    "region": "WECC",
+    "title": "INSM design before the enforcement date",
+    "body": "A municipal utility engaged us to design CIP-015 monitoring before the September 2025 effective date. We produced the risk-based sensor placement rationale, retention procedures, and the documentation package tying coverage decisions to network risk — sized for the coming EACMS/PACS expansion.",
+    "metric": "Day 1", "metricLabel": "compliant at effective date"
+  }
+]

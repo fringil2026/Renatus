@@ -1,0 +1,44 @@
+[
+  {
+    "slug": "managed-cip-program",
+    "code": "CIP-002 → CIP-015",
+    "title": "Managed CIP Compliance Program",
+    "summary": "Full operation of your CIP program as a service: policy and procedure upkeep, control execution tracking, evidence collection on the compliance calendar, and quarterly internal-controls reviews.",
+    "points": ["Evidence library run audit-ready year-round", "Compliance calendar with owner-level task tracking", "Annual program assessment against current standard versions"]
+  },
+  {
+    "slug": "audit-readiness",
+    "code": "RSAW / CMEP",
+    "title": "Audit Readiness & Mock Audits",
+    "summary": "Pre-audit gap assessments and full mock audits run the way your regional entity runs them — RSAW narratives, evidence sampling, and SME interview preparation.",
+    "points": ["RSAW drafting and evidence cross-referencing", "Mock data requests on regional-entity timelines", "Findings ranked by violation risk and remediation effort"]
+  },
+  {
+    "slug": "asset-scoping",
+    "code": "CIP-002-5.1a",
+    "title": "BES Cyber System Scoping & Categorization",
+    "summary": "Defensible identification and impact categorization of BES Cyber Systems, with documented methodology that survives auditor scrutiny and change over time.",
+    "points": ["Impact rating methodology and bright-line review", "ESP / EACMS / PACS / PCA boundary documentation", "Re-categorization triggered by system changes"]
+  },
+  {
+    "slug": "supply-chain",
+    "code": "CIP-013",
+    "title": "Supply Chain Risk Management",
+    "summary": "A CIP-013 program that procurement will actually follow: vendor risk assessments, procurement language, and revision cycles aligned to your sourcing process.",
+    "points": ["Vendor security assessment workflow", "Contract clause library mapped to R1 criteria", "Plan reviews on the 15-month cycle"]
+  },
+  {
+    "slug": "insm-readiness",
+    "code": "CIP-015-1",
+    "title": "Internal Network Security Monitoring",
+    "summary": "CIP-015 became enforceable September 2025. We design risk-based INSM data collection inside the ESP, retention and analysis processes, and the documentation that ties sensor placement to risk.",
+    "points": ["Risk-justified sensor and feed placement", "Detection, evaluation, and retention procedures", "Scope planning for the expanded EACMS/PACS revision"]
+  },
+  {
+    "slug": "enforcement-support",
+    "code": "Self-Reports / Mitigation",
+    "title": "Self-Reports & Mitigation Plans",
+    "summary": "When a potential noncompliance surfaces, we manage the full lifecycle: scoping and root cause, self-report drafting, mitigation plan design, and completion evidence.",
+    "points": ["Root-cause analysis with extent-of-condition review", "Mitigation milestones your team can actually hit", "Disposition tracking through closure"]
+  }
+]

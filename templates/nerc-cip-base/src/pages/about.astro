@@ -1,0 +1,45 @@
+---
+import Base from "../layouts/Base.astro";
+import ComplianceBand from "../components/ComplianceBand.astro";
+import CTA from "../components/CTA.astro";
+const team = [
+  { name: "J. Placeholder", role: "Principal · Former Regional Entity Auditor", creds: "CISA · 14 yrs CMEP" },
+  { name: "A. Placeholder", role: "Director, OT Security", creds: "GICSP · CISSP" },
+  { name: "R. Placeholder", role: "Compliance Program Lead", creds: "Ex-utility CIP Senior Manager" },
+];
+---
+<Base
+  title="The Firm — Meridian Grid Assurance"
+  description="A NERC CIP practice built by former regional-entity auditors and utility compliance leads. How we work, who we are, and how client evidence is protected."
+>
+  <section class="border-b border-line py-16 md:py-20">
+    <div class="mx-auto max-w-6xl px-5">
+      <p class="eyebrow">The firm</p>
+      <h1 class="mt-3 max-w-3xl font-display text-5xl font-bold uppercase tracking-tight md:text-6xl">Built by people who ran the audits</h1>
+      <p class="mt-5 max-w-2xl text-lg text-muted">
+        Our practice combines former regional-entity audit staff with utility compliance leads who
+        have lived both sides of a data request. We know what evidence gets accepted because we
+        used to be the ones accepting it.
+      </p>
+    </div>
+  </section>
+  <section class="bg-paper py-20 text-ink">
+    <div class="mx-auto max-w-6xl px-5">
+      <p class="eyebrow eyebrow--dark">Team</p>
+      <h2 class="mt-3 font-display text-4xl font-bold uppercase tracking-tight">Principals</h2>
+      <div class="mt-10 grid gap-px border border-line-light bg-line-light sm:grid-cols-3">
+        {team.map((t) => (
+          <article class="bg-paper p-7">
+            <div class="mb-5 aspect-square w-24 border border-line-light bg-paper-2" aria-hidden="true"></div>
+            <h3 class="font-display text-2xl font-semibold uppercase tracking-tight">{t.name}</h3>
+            <p class="mt-1 text-sm text-muted-dark">{t.role}</p>
+            <p class="mt-3 font-mono text-xs text-amber-deep">{t.creds}</p>
+          </article>
+        ))}
+      </div>
+      <p class="mt-4 font-mono text-[0.65rem] text-muted-dark">CLIENT-CUSTOMIZE: real bios + headshots with usage permission (workflow §2.6).</p>
+    </div>
+  </section>
+  <ComplianceBand />
+  <CTA />
+</Base>

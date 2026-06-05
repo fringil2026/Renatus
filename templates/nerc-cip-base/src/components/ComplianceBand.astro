@@ -1,0 +1,15 @@
+---
+// Trust band: the compliance language utility procurement teams scan for.
+import { SITE } from "../config/site";
+---
+<section class="border-b border-line bg-panel" aria-label="Compliance credentials">
+  <div class="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-x-10 gap-y-4 px-5 py-5">
+    <p class="font-mono text-[0.65rem] tracking-[0.25em] text-muted uppercase">Regional entities</p>
+    <ul class="flex flex-wrap gap-x-8 gap-y-2">
+      {SITE.regions.map((r) => <li class="font-display text-lg font-semibold tracking-widest text-paper/80 uppercase">{r}</li>)}
+    </ul>
+    <ul class="flex flex-wrap gap-2">
+      {SITE.certifications.map((c) => <li class="cip-chip">{c}</li>)}
+    </ul>
+  </div>
+</section>

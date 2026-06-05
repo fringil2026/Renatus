@@ -1,0 +1,78 @@
+@import "tailwindcss";
+
+/* ============================================================
+   DESIGN TOKENS — generated from /tokens.json (keep in sync)
+   Aesthetic: "control-room precision" — dark graphite panels,
+   archival paper sections, SCADA-alarm amber as the only accent.
+   ============================================================ */
+@theme {
+  --color-ink: #0c1622;
+  --color-panel: #122031;
+  --color-panel-2: #182a3f;
+  --color-paper: #f4f1ea;
+  --color-paper-2: #eae5d9;
+  --color-amber: #ffb000;
+  --color-amber-deep: #d98e00;
+  --color-line: #2a3c52;
+  --color-line-light: #d8d2c2;
+  --color-muted: #8fa1b5;
+  --color-muted-dark: #5d6b7a;
+
+  --font-display: "Barlow Condensed", "Arial Narrow", sans-serif;
+  --font-body: "Public Sans", "Helvetica Neue", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+
+html { scroll-behavior: smooth; }
+body {
+  font-family: var(--font-body);
+  background: var(--color-ink);
+  color: var(--color-paper);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Blueprint grid texture for dark panels */
+.grid-tex {
+  background-image:
+    linear-gradient(var(--color-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--color-line) 1px, transparent 1px);
+  background-size: 56px 56px;
+  opacity: 0.18;
+}
+
+/* Standard-code chip, e.g. CIP-013-2 */
+.cip-chip {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  border: 1px solid var(--color-amber-deep);
+  color: var(--color-amber);
+  padding: 0.2rem 0.55rem;
+  display: inline-block;
+}
+.cip-chip--paper { border-color: var(--color-ink); color: var(--color-ink); }
+
+/* Section eyebrow label */
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--color-amber);
+}
+.eyebrow--dark { color: var(--color-amber-deep); }
+
+/* Staggered load-in for hero */
+@keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+.rise { animation: rise 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+.rise-1 { animation-delay: 0.05s; } .rise-2 { animation-delay: 0.18s; }
+.rise-3 { animation-delay: 0.32s; } .rise-4 { animation-delay: 0.46s; }
+@media (prefers-reduced-motion: reduce) { .rise { animation: none; } }
+
+/* Hairline rule with amber tick — recurring visual signature */
+.rule-tick { position: relative; border-top: 1px solid var(--color-line); }
+.rule-tick::before {
+  content: ""; position: absolute; top: -1px; left: 0;
+  width: 64px; height: 3px; background: var(--color-amber);
+}
+.rule-tick--paper { border-top-color: var(--color-line-light); }

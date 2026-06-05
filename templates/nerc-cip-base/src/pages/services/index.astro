@@ -1,0 +1,19 @@
+---
+import Base from "../../layouts/Base.astro";
+import ServicesGrid from "../../components/ServicesGrid.astro";
+import CTA from "../../components/CTA.astro";
+---
+<Base
+  title="Services — Managed NERC CIP Compliance | Meridian Grid Assurance"
+  description="NERC CIP services: managed compliance programs, audit readiness and mock audits, CIP-002 scoping, CIP-013 supply chain risk, CIP-015 INSM, and self-report support."
+>
+  <section class="border-b border-line py-16 md:py-20">
+    <div class="mx-auto max-w-6xl px-5">
+      <p class="eyebrow">Services</p>
+      <h1 class="mt-3 max-w-3xl font-display text-5xl font-bold uppercase tracking-tight md:text-6xl">Every standard. One accountable team.</h1>
+      <p class="mt-5 max-w-2xl text-lg text-muted">Engage a single practice area or hand us the whole program. Either way, the deliverable is the same: evidence an auditor accepts.</p>
+    </div>
+  </section>
+  <ServicesGrid detailed />
+  <CTA title="Not sure where the gaps are?" />
+</Base>

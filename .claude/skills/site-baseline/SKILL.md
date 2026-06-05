@@ -1,0 +1,38 @@
+---
+name: site-baseline
+description: This skill should be used to run or interpret the automated discovery baseline on an existing website (scrape, crawl, extract, audit). Trigger when a new client pipeline starts, when asked to "run the baseline", "scrape <domain>", or when assembling a prototype from baseline outputs.
+---
+
+# Site Baseline — three-method discovery scrape
+
+## Purpose
+Turn a domain name into the 01-baseline/ deliverables that seed the prototype and
+the intake. Three independent capture methods cross-validate URL coverage:
+1. **crawl.py** — HTTP crawler (requests+bs4): structure, content, metadata, forms, SEO signals
+2. **render_capture.py** — headless Chromium (playwright, optional): JS-rendered pages,
+   full-page desktop+mobile screenshots, computed colors/fonts, XHR/fetch endpoints
+3. **mirror.sh** — wget archive: raw fallback copy + independent URL census
+
+## Run
+Normally studio.py launches `scripts/run_baseline.py <domain> <client_dir>` automatically.
+Manual: same command. Each script is independently runnable for retries.
+
+## Outputs (the contract)
+00-source/: crawl.json, mirror/, rendered/ (render.json + screenshots), scrape.log
+01-baseline/: url-inventory.csv · content-draft.md · tokens-draft.json ·
+metadata-audit.md · tech-fingerprint.md · coverage.md · perf-baseline.md
+
+## Interpreting for the prototype
+- coverage.md lists paths missed by any single method — investigate before trusting the inventory.
+- tech-fingerprint.md GA4 IDs and detected services seed brief.yaml integrations and the
+  owner questionnaire focus.
+- content-draft.md and tokens-draft.json are DRAFTS: scraped, ownership unverified.
+  Apply them to the prototype clearly marked DRAFT; the owner's answers confirm or replace.
+- url-inventory.csv seeds 02-intake/redirect-map.csv (old column = inventory, new = proposed).
+- If a page's word_count is near zero but the rendered method captured text, the site is
+  JS-rendered — prefer method-2 data and note it.
+
+## Failure modes
+Crawl blocked (403/0 statuses) → retry with the mirror; if both blocked, note it and fall
+back to the rendered method. Playwright/wget missing → pipeline continues on method 1 and
+coverage.md says so. Never silently substitute guessed content for failed scrapes.

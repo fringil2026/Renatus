@@ -1,0 +1,22 @@
+[
+  {
+    "q": "Which organizations are required to comply with NERC CIP?",
+    "a": "Registered entities on the bulk electric system — transmission owners and operators, generator owners and operators, balancing authorities, and related functions registered with NERC. Obligations scale with the impact rating of your BES Cyber Systems under CIP-002."
+  },
+  {
+    "q": "What does a regional entity audit actually involve?",
+    "a": "Your regional entity (SERC, WECC, RF, MRO, Texas RE, or NPCC) issues data requests against the Reliability Standard Audit Worksheets, samples your evidence, and interviews subject-matter experts. Preparation is primarily an evidence-quality problem — which is why we run the evidence library audit-ready continuously rather than assembling it on notice."
+  },
+  {
+    "q": "What is CIP-015 and when did it take effect?",
+    "a": "CIP-015-1 requires Internal Network Security Monitoring — detecting malicious activity inside the Electronic Security Perimeter rather than only at its boundary. It became effective September 2, 2025, and FERC has directed an expanded revision covering associated EACMS and PACS, so programs should be designed with that broader scope in mind."
+  },
+  {
+    "q": "We only have low-impact assets. Do we still need help?",
+    "a": "Low-impact entities carry real obligations under CIP-003 — security awareness, physical and electronic access controls, incident response, and transient cyber asset controls — and the pending CIP-003 revisions add detection-oriented expectations. We run right-sized programs for low-impact-only entities."
+  },
+  {
+    "q": "How do you handle our compliance evidence securely?",
+    "a": "Evidence is BES Cyber System Information under CIP-011. We operate under your information-protection program: client-segregated encrypted storage, access on a need-to-know basis with logging, and handling procedures you can show your auditor."
+  }
+]

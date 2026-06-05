@@ -1,0 +1,38 @@
+---
+import { SITE } from "../config/site";
+const year = new Date().getFullYear();
+---
+<footer class="border-t border-line bg-ink">
+  <div class="mx-auto grid max-w-6xl gap-10 px-5 py-14 md:grid-cols-3">
+    <div>
+      <p class="font-display text-xl font-semibold uppercase tracking-wide">{SITE.name}</p>
+      <p class="mt-2 max-w-xs text-sm text-muted">{SITE.tagline}.</p>
+      <p class="mt-4 font-mono text-xs text-muted">{SITE.address.street}<br />{SITE.address.city}, {SITE.address.region} {SITE.address.postal}</p>
+    </div>
+    <div>
+      <p class="eyebrow">Practice areas</p>
+      <ul class="mt-3 space-y-2 text-sm">
+        <li><a class="hover:text-amber" href="/services/#managed-cip-program">Managed CIP Program</a></li>
+        <li><a class="hover:text-amber" href="/services/#audit-readiness">Audit Readiness</a></li>
+        <li><a class="hover:text-amber" href="/services/#supply-chain">Supply Chain (CIP-013)</a></li>
+        <li><a class="hover:text-amber" href="/services/#insm-readiness">INSM (CIP-015)</a></li>
+      </ul>
+    </div>
+    <div>
+      <p class="eyebrow">Contact</p>
+      <ul class="mt-3 space-y-2 font-mono text-sm">
+        <li><a class="hover:text-amber" href={`tel:${SITE.phone.replace(/[^+\d]/g, "")}`}>{SITE.phone}</a></li>
+        <li><a class="hover:text-amber" href={`mailto:${SITE.email}`}>{SITE.email}</a></li>
+      </ul>
+      <p class="mt-6 font-mono text-[0.65rem] leading-relaxed text-muted-dark">
+        BES Cyber System Information handled under CIP-011-aligned information-protection procedures.
+      </p>
+    </div>
+  </div>
+  <div class="border-t border-line">
+    <div class="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-5 py-4 font-mono text-[0.65rem] tracking-wider text-muted-dark uppercase">
+      <span>© {year} {SITE.legalName}</span>
+      <span class="flex gap-4"><a href="/privacy/" class="hover:text-amber">Privacy</a><a href="/terms/" class="hover:text-amber">Terms</a></span>
+    </div>
+  </div>
+</footer>

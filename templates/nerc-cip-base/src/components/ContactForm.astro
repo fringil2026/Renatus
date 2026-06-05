@@ -1,0 +1,68 @@
+---
+// Pre-wired form: honeypot, optional Turnstile, posts to the per-client endpoint,
+// fires a GA4 conversion event on success. Selector-stable IDs for tracking (§3.4).
+import { SITE } from "../config/site";
+---
+<form id="contact-form" class="grid gap-5" method="POST" action={SITE.formEndpoint} novalidate>
+  <div class="grid gap-5 sm:grid-cols-2">
+    <label class="grid gap-1.5">
+      <span class="font-mono text-xs tracking-[0.15em] text-muted uppercase">Name</span>
+      <input required name="name" autocomplete="name" class="border border-line bg-panel px-4 py-3 text-paper outline-none transition-colors focus:border-amber" />
+    </label>
+    <label class="grid gap-1.5">
+      <span class="font-mono text-xs tracking-[0.15em] text-muted uppercase">Work email</span>
+      <input required type="email" name="email" autocomplete="email" class="border border-line bg-panel px-4 py-3 text-paper outline-none transition-colors focus:border-amber" />
+    </label>
+  </div>
+  <div class="grid gap-5 sm:grid-cols-2">
+    <label class="grid gap-1.5">
+      <span class="font-mono text-xs tracking-[0.15em] text-muted uppercase">Organization</span>
+      <input name="organization" autocomplete="organization" class="border border-line bg-panel px-4 py-3 text-paper outline-none transition-colors focus:border-amber" />
+    </label>
+    <label class="grid gap-1.5">
+      <span class="font-mono text-xs tracking-[0.15em] text-muted uppercase">Regional entity</span>
+      <select name="region" class="border border-line bg-panel px-4 py-3 text-paper outline-none transition-colors focus:border-amber">
+        <option value="">Select…</option>
+        {SITE.regions.map((r) => <option value={r}>{r}</option>)}
+        <option value="other">Other / not sure</option>
+      </select>
+    </label>
+  </div>
+  <label class="grid gap-1.5">
+    <span class="font-mono text-xs tracking-[0.15em] text-muted uppercase">What do you need help with?</span>
+    <textarea required name="message" rows="5" class="border border-line bg-panel px-4 py-3 text-paper outline-none transition-colors focus:border-amber"></textarea>
+  </label>
+  <!-- Honeypot: hidden from humans, bots fill it -->
+  <input type="text" name="company_website" tabindex="-1" autocomplete="off" class="hidden" aria-hidden="true" />
+  {SITE.turnstileSiteKey && <div class="cf-turnstile" data-sitekey={SITE.turnstileSiteKey}></div>}
+  <p class="font-mono text-[0.65rem] leading-relaxed text-muted-dark">
+    Do not include BES Cyber System Information in this form. Secure transfer is arranged after engagement.
+  </p>
+  <button type="submit" class="justify-self-start border border-amber bg-amber px-7 py-3 font-display text-base font-semibold tracking-wide text-ink uppercase transition-colors hover:bg-transparent hover:text-amber">
+    Send request
+  </button>
+  <p id="form-status" role="status" aria-live="polite" class="hidden font-mono text-sm"></p>
+</form>
+{SITE.turnstileSiteKey && <script async src="https://challenges.cloudflare.com/turnstile/v0/api.js"></script>}
+<script>
+  const form = document.getElementById("contact-form") as HTMLFormElement;
+  const status = document.getElementById("form-status")!;
+  form?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    if ((form.elements.namedItem("company_website") as HTMLInputElement).value) return; // honeypot
+    status.classList.remove("hidden");
+    status.textContent = "Sending…";
+    try {
+      const res = await fetch(form.action, { method: "POST", body: new FormData(form) });
+      if (!res.ok) throw new Error(String(res.status));
+      status.textContent = "Received. We respond within one business day.";
+      status.className = "font-mono text-sm text-amber";
+      form.reset();
+      // Conversion event — verify post-launch per cutover checklist §3.4
+      (window as any).gtag?.("event", "generate_lead", { form_id: "contact-form" });
+    } catch {
+      status.textContent = "Something went wrong — email us directly instead.";
+      status.className = "font-mono text-sm text-amber-deep";
+    }
+  });
+</script>

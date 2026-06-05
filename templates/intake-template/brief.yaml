@@ -1,0 +1,45 @@
+# ============================================================
+# CLIENT INTAKE BRIEF  —  the only file that requires human input.
+# Fill what you know. Leave a field blank and Claude will either
+# derive it, placeholder it, or ask. Claude reads this FIRST.
+# ============================================================
+
+client:
+  name: "Meridian Grid Assurance"        # display name used across the site
+  legal_name: "Meridian Grid Assurance LLC"
+  tagline: "Managed NERC CIP compliance for registered entities"
+  archetype: b2b-compliance              # which base template to use
+
+contact:
+  phone: "+1 (555) 014-0042"
+  email: "compliance@example-client.com"
+  address:
+    street: "100 Substation Way"
+    city: "Charlotte"
+    region: "NC"
+    postal: "28202"
+    country: "US"
+
+domains:
+  production: "https://example-client.com"   # final live address (sets canonical, sitemap, OG)
+  staging: ""                                # optional
+
+# External truths only the client can give you (NOT design).
+integrations:
+  ga4_id: ""                 # carry the client's EXISTING property forward — never a new one
+  form_endpoint: "/api/contact"   # where the contact form POSTs
+  turnstile_site_key: ""     # issue a NEW key per rebuild; leave blank to omit the widget
+
+# Archetype-specific profile (drives the trust band on this template).
+profile:
+  regions: [SERC, RF, WECC, MRO, "Texas RE", NPCC]
+  certifications: [CISSP, CISA, GICSP, PMP]
+
+# BUILD DIRECTIVES — tell Claude how to compose, not how to design from scratch.
+build:
+  pages: [home, services, about, contact]
+  hero_variant: split        # split | centered
+  tone: "authoritative, plain-spoken, no marketing hype"
+  notes: >
+    Lead with INSM (CIP-015) readiness — the client serves utilities preparing for the
+    EACMS/PACS expansion. Keep the firm page credibility-forward: former regional auditors.

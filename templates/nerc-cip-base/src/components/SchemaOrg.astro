@@ -1,0 +1,26 @@
+---
+// Organization + ProfessionalService JSON-LD. Page-specific schema
+// (FAQPage, Service, Article) is added by the components that own that content.
+import { SITE } from "../config/site";
+const schema = {
+  "@context": "https://schema.org",
+  "@type": "ProfessionalService",
+  name: SITE.name,
+  legalName: SITE.legalName,
+  description: SITE.tagline,
+  url: SITE.domain,
+  telephone: SITE.phone,
+  email: SITE.email,
+  address: {
+    "@type": "PostalAddress",
+    streetAddress: SITE.address.street,
+    addressLocality: SITE.address.city,
+    addressRegion: SITE.address.region,
+    postalCode: SITE.address.postal,
+    addressCountry: SITE.address.country,
+  },
+  knowsAbout: ["NERC CIP compliance", "Bulk Electric System cybersecurity", "Internal Network Security Monitoring", "Supply chain risk management"],
+  areaServed: SITE.regions.map((r) => ({ "@type": "AdministrativeArea", name: r })),
+};
+---
+<script type="application/ld+json" set:html={JSON.stringify(schema)} />

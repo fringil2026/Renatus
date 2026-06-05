@@ -1,0 +1,14 @@
+# Production robots policy. Staging protection is handled by the
+# PUBLIC_INDEXABLE flag (meta noindex) + host-level password, NOT here.
+User-agent: *
+Allow: /
+
+# AI crawlers explicitly allowed — deliberate AEO decision (workflow §3.7).
+User-agent: GPTBot
+Allow: /
+User-agent: ClaudeBot
+Allow: /
+User-agent: PerplexityBot
+Allow: /
+
+Sitemap: https://example-client.com/sitemap.xml

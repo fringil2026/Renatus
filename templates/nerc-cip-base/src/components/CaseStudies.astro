@@ -1,0 +1,26 @@
+---
+import cases from "../data/cases.json";
+---
+<section class="border-y border-line bg-ink">
+  <div class="mx-auto max-w-6xl px-5 py-20 md:py-24">
+    <p class="eyebrow">Engagements</p>
+    <h2 class="mt-3 max-w-2xl font-display text-4xl font-bold uppercase tracking-tight md:text-5xl">Outcomes auditors have signed off on</h2>
+    <div class="mt-12 grid gap-6 lg:grid-cols-3">
+      {cases.map((c) => (
+        <article class="flex flex-col border border-line bg-panel p-7 transition-colors hover:border-amber-deep">
+          <div class="flex items-center justify-between gap-3">
+            <span class="font-mono text-[0.65rem] tracking-[0.2em] text-muted uppercase">{c.sector}</span>
+            <span class="cip-chip">{c.region}</span>
+          </div>
+          <h3 class="mt-4 font-display text-2xl font-semibold uppercase leading-tight">{c.title}</h3>
+          <p class="mt-3 flex-1 text-sm leading-relaxed text-muted">{c.body}</p>
+          <p class="rule-tick mt-6 pt-4">
+            <span class="font-display text-4xl font-bold text-amber">{c.metric}</span>
+            <span class="ml-2 font-mono text-xs text-muted uppercase">{c.metricLabel}</span>
+          </p>
+        </article>
+      ))}
+    </div>
+    <p class="mt-6 font-mono text-[0.65rem] text-muted-dark">Engagement details anonymized under client confidentiality agreements.</p>
+  </div>
+</section>
