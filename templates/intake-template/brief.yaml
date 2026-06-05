@@ -9,6 +9,8 @@ client:
   legal_name: "Meridian Grid Assurance LLC"
   tagline: "Managed NERC CIP compliance for registered entities"
   archetype: b2b-compliance              # which base template to use
+  industry: ""                           # picks playbooks/<industry>.md; blank = inferred from baseline.
+                                         # Available: ecommerce-catalog, nerc-cip-compliance (or add one via playbooks/_TEMPLATE.md)
 
 contact:
   phone: "+1 (555) 014-0042"

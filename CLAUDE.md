@@ -48,6 +48,13 @@ The human normally archives via the dashboard button; if asked: verify stage is 
 cutover-checked (warn otherwise), then move clients/<slug>/ to archive/<slug>-<YYYYmmdd-HHMMSS>/.
 Never delete client folders; archive is the only removal path.
 
+## Industry playbooks
+When assembling a prototype or finishing a client, ALWAYS check playbooks/ for a file
+matching the client's industry (from brief.yaml `industry:`, or inferred from the
+baseline if blank — record the inference). If a match exists, read it and apply it to
+content drafting, schema, section choices, and tone. If none exists, say so explicitly,
+proceed with general defaults, and suggest creating one from playbooks/_TEMPLATE.md.
+
 ## Hard rules — always, regardless of skill loading
 - NEVER fabricate a client fact. Blanks stay blank and get flagged FOR REVIEW.
 - NEVER edit templates/ for a client; copy first.
