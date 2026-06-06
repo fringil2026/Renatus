@@ -20,7 +20,16 @@ Manual: same command. Each script is independently runnable for retries.
 ## Outputs (the contract)
 00-source/: crawl.json, mirror/, rendered/ (render.json + screenshots), scrape.log
 01-baseline/: url-inventory.csv · content-draft.md · tokens-draft.json ·
-metadata-audit.md · tech-fingerprint.md · coverage.md · perf-baseline.md
+metadata-audit.md · tech-fingerprint.md · coverage.md · perf-baseline.md ·
+feature-census.md
+
+`feature-census.md` (scripts/feature_census.py, runs after extract; also standalone:
+`python3 feature_census.py <client_dir>`) detects the site's macro-features (search,
+filter/sort, pagination, cart/checkout, accounts, wishlist, newsletter, category nav,
+contact, pixels, reviews) and classifies each CARRY-OVER / STUB+FLAG / OBSOLETE. CARRY-OVER
+is the prototype's parity floor; STUB+FLAG rows name the deliverables §2.7 fact that unblocks
+them. A second tool, `scripts/extract_catalog.py`, pulls a real product catalog (name+photo
+per source page) from the mirror for image-bearing builds.
 
 ## Interpreting for the prototype
 - coverage.md lists paths missed by any single method — investigate before trusting the inventory.

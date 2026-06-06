@@ -22,7 +22,10 @@ live in archive/<slug>-<timestamp>/ — read-only history, one folder per comple
 
 ## Command 1 — "Assemble prototype for <slug>"
 Trigger: status.stage == baseline-ready (dashboard tells the human when).
-1. Read 01-baseline/ in full (inventory, drafts, audits, coverage).
+1. Read 01-baseline/ in full (inventory, drafts, audits, coverage, feature-census).
+   PARITY FLOOR: the prototype MUST carry every feature the census marks CARRY-OVER; STUB+FLAG
+   features get a visible honest stub. New/better features come ON TOP of parity, never INSTEAD
+   of it — dropping a CARRY-OVER feature is a build failure unless the census marked it OBSOLETE.
 2. Copy the matching archetype from templates/ into 03-site/ (`cp -R`, never build in templates/).
 3. Apply 01-baseline/tokens-draft.json to the @theme block; mirror to 03-site/tokens.json.
 4. Map content-draft.md into the data slots; everything is marked DRAFT (it is scraped, unverified).

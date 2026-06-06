@@ -61,6 +61,7 @@ def main():
         run(["bash", str(HERE / "mirror.sh"), domain, str(client)], client, "mirror (method 3)")
         run([py, str(HERE / "render_capture.py"), str(client)], client, "render (method 2)")
         run([py, str(HERE / "extract.py"), str(client)], client, "extract baseline")
+        run([py, str(HERE / "feature_census.py"), str(client)], client, "feature census")
         run([py, str(HERE / "perf.py"), domain, str(client)], client, "performance baseline")
         bump(client, stage="baseline-ready",
              msg='baseline ready — next: claude -> "Assemble prototype for <slug>"')
