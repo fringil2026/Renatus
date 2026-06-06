@@ -149,6 +149,9 @@ def list_clients():
                     "paste": stage == "awaiting-owner",
                     "rerun": stage == "error",
                     "done": stage in ("final", "cutover-checked"),
+                    "preview_url": st.get("preview_url", ""),
+                    "preview_stale": st.get("preview_stale", False),
+                    "preview_at": st.get("preview_published_at", ""),
                     "log": st.get("log", [])[-3:]})
     return out
 
@@ -190,6 +193,10 @@ border:1px solid var(--amber2);color:var(--amber);padding:.25em .7em;white-space
 .next{font-family:var(--m);font-size:.78rem;background:var(--panel2);
 border-left:3px solid var(--amber);padding:.55rem .8rem;margin-top:.7rem}
 .log{font-family:var(--m);font-size:.65rem;color:var(--muted);margin-top:.5rem;white-space:pre-wrap}
+.prev{font-family:var(--m);font-size:.7rem;margin-top:.5rem}
+.prev a{color:var(--amber);text-decoration:none}
+.prev .pdate{color:var(--muted)}
+.prev .stale{color:#ff5d5d;font-weight:600}
 .paste{margin-top:.8rem;display:grid;gap:.5rem}.paste textarea{width:100%;min-height:7rem}
 .empty{color:var(--muted);font-family:var(--m);font-size:.8rem}
 </style></head><body><div class="wrap">
@@ -221,6 +228,7 @@ async function load(){
       <button class="${c.done?'done':'ghost'}" onclick="if(confirm('Archive ${c.slug}? Moves it to archive/ and clears this row.'))act('/archive','${c.slug}')">Archive</button>
     </div></div>
     <div class="next">${c.next}</div>
+    ${c.preview_url?`<div class="prev">preview: <a href="${c.preview_url}" target="_blank" rel="noopener">${c.preview_url}</a>${c.preview_stale?' <span class="stale">⚠ stale — last deploy failed, redeploy</span>':` <span class="pdate">${c.preview_at}</span>`}</div>`:''}
     ${c.paste?`<form class="paste" onsubmit="return answers(event,'${c.slug}')">
       <textarea placeholder="Step 2 — paste the owner's questionnaire summary here…"></textarea>
       <button>Save owner answers</button></form>`:''}

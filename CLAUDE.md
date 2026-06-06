@@ -101,16 +101,30 @@ When the human describes a change conversationally ("make the hero bigger, add a
 FAQ"), do NOT just do it: first author the edit file from the template (next NNN, PENDING),
 SHOW it to the human, then process it. The record must always exist before the change does.
 
-## Command 6 — "Publish preview for <slug>"
+## Command 6 — "Publish preview for <slug>" (and the PUBLISH-ALWAYS rule)
 Deploy the current `03-site` build as a PRIVATE preview for owner review.
-1. Build with noindex ON — previews NEVER get `PUBLIC_INDEXABLE` (so `npm run build`,
-   never the production flag). The staging noindex meta must be present in the output.
+1. Build with noindex ON — previews NEVER get `PUBLIC_INDEXABLE` (so `npm run build`, never the
+   production flag). Previews are PERMANENTLY noindex; the staging noindex meta must be in output.
 2. Deploy `03-site/dist/` to Cloudflare Pages via wrangler as project `ws-<slug>`:
    `wrangler pages deploy 03-site/dist --project-name ws-<slug>`.
-3. Report the public `*.pages.dev` URL.
-First run only: wrangler isn't set up. Do NOT fail — walk the human through the one-time
-setup (`npm i -g wrangler` then `wrangler login`, which opens a browser), then continue.
+3. Report the public `*.pages.dev` URL, and write `preview_url` + `preview_published_at` into
+   `status.json`.
+First run only: wrangler isn't set up. Do NOT fail — walk the human through the one-time setup
+(`npm i -g wrangler` then `wrangler login`, which opens a browser), then continue.
 This is a preview, not a launch: no DNS, no custom domain, no MX/email changes.
+
+### PUBLISH-ALWAYS (universal — replaces any per-trigger auto-publish)
+ANY completed change to a client's `03-site` — prototype assembly, edit processing, a spec phase,
+or a one-off fix from chat — is NOT "done" until it is live at the preview URL. Every such change
+ends with, in order:
+1. `npm run build` (verification stays MANDATORY — a failing build is never published or reported done);
+2. an automatic Publish preview (the steps above — no need to be asked);
+3. `preview_url` + `preview_published_at` refreshed in `status.json`.
+**Reporting:** report the preview URL as where to see the work. Do NOT offer `localhost` / `npm run
+dev` as the review path (the dev server stays available for your own debugging only).
+**On deploy failure:** the work STILL commits; log the failure loudly to `status.json` `log[]` and
+leave the prior `preview_url` with a `preview_stale: true` flag so the dashboard staleness hint
+fires — NEVER silently leave a stale URL unflagged. Then surface the failure in the report.
 
 ## Command 7 — "Process deliverables for <slug>"
 `02-intake/deliverables-request.md` is a LIVING document. As answers and assets arrive,
