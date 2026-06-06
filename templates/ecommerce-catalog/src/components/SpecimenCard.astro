@@ -28,14 +28,16 @@ const href = `/shop/${product.slug}/`;
     </div>
     <p class="mono-label mt-1">{product.origin}</p>
 
-    <div class="mt-3 flex items-center justify-between">
+    <!-- Concrete attributes as text (Edit 001): origin (above), care level, temperature -->
+    <ul class="mt-2 flex flex-wrap gap-1.5">
+      <li class="diff-badge" style={`border-color:${difficultyColor(product.difficulty)};color:${difficultyColor(product.difficulty)}`}>
+        {product.difficulty} care
+      </li>
+      <li class="attr-badge">{product.care_temp}-growing</li>
+    </ul>
+
+    <div class="mt-3">
       <CareGlyphs product={product} />
-      <span
-        class="diff-dot"
-        style={`background:${difficultyColor(product.difficulty)}`}
-        title={`Difficulty: ${product.difficulty}`}
-        aria-label={`Difficulty: ${product.difficulty}`}
-      ></span>
     </div>
 
     <div class="botanical-rule mt-3 pt-3">
@@ -43,14 +45,14 @@ const href = `/shop/${product.slug}/`;
         <div class="flex items-center justify-between">
           <span class="text-lg text-ink">{priceLabel(product)}</span>
           <a href={href} class="bg-conservatory px-3 py-1.5 text-xs tracking-wide text-paper hover:bg-petal transition-colors">
-            View specimen
+            View care &amp; price
           </a>
         </div>
       ) : (
         <div class="flex items-center justify-between">
           <span class="mono-label">Currently growing</span>
           <a href={`/conservatory/#${product.slug}`} class="border border-petal px-3 py-1.5 text-xs tracking-wide text-petal hover:bg-petal hover:text-paper transition-colors">
-            Notify me
+            Get notified when it's back
           </a>
         </div>
       )}

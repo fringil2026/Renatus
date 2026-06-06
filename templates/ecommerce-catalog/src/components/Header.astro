@@ -2,8 +2,8 @@
 import { SITE } from "../config/site";
 const path = Astro.url.pathname;
 const nav = [
-  { href: "/shop/", label: "The Catalogue" },
-  { href: "/conservatory/", label: "The Conservatory" },
+  { href: "/shop/", label: "Browse orchids" },
+  { href: "/conservatory/", label: "Currently growing" },
 ];
 const active = (href: string) => path === href || (href !== "/" && path.startsWith(href));
 ---
