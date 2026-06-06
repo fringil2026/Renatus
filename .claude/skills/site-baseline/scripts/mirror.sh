@@ -1,14 +1,16 @@
 #!/usr/bin/env bash
 # Method 3 — wget mirror: a raw archive + independent URL census.
-# Hardened (tonight's lesson): hard-capped at 300 files OR 5 minutes,
-# whichever comes first, logging which cap was hit. An unbounded mirror
-# is what left a wget running after the scrape was interrupted.
+# Hard-capped at MAX_FILES files OR MAX_SECONDS seconds, whichever first, logging which cap hit.
+# Always BOUNDED — an unbounded mirror once orphaned a wget. The caps are env-overridable for the
+# rehearsal COMPLETENESS pass (deliberate + logged), e.g.:
+#   MIRROR_MAX_FILES=5000 MIRROR_MAX_SECONDS=2700 ./mirror.sh https://example.com <client_dir>
 # Usage: ./mirror.sh https://example.com <client_dir>
 set -u
 DOMAIN="$1"; CLIENT="$2"
 OUT="$CLIENT/00-source/mirror"
-MAX_FILES=300        # stop after this many mirrored .html files
-MAX_SECONDS=300      # ...or after 5 minutes, whichever comes first
+MAX_FILES="${MIRROR_MAX_FILES:-300}"      # default 300; rehearsal raises (still bounded)
+MAX_SECONDS="${MIRROR_MAX_SECONDS:-300}"  # default 5 min; rehearsal raises (still bounded)
+echo "mirror: caps = ${MAX_FILES} files / ${MAX_SECONDS}s"
 mkdir -p "$OUT"
 if ! command -v wget >/dev/null 2>&1; then
   echo "wget not installed — skipped (method 3)" | tee "$OUT/SKIPPED.txt"; exit 0

@@ -23,15 +23,16 @@ export interface Product {
   care_temp: string;         // warm | intermediate | cool growing
   difficulty: Difficulty;
   bloom_now: boolean;
-  photos: string[];          // storage paths; empty in Phase 1 (no licensed photography yet)
+  photos: string[];          // storage paths; [] = no photo (clean type-led card)
+  availability?: string;     // in-stock | out-of-stock | coming-soon | discontinued (OVERRIDES qty)
 }
 
 const ALL = (seed.products as Product[]).filter((p) => p.status === "active");
 
 export const products = (): Product[] => ALL;
-export const inStock = (): Product[] => ALL.filter((p) => p.stock_qty > 0);
-export const outOfStock = (): Product[] => ALL.filter((p) => p.stock_qty <= 0);
-export const bloomingNow = (): Product[] => ALL.filter((p) => p.bloom_now && p.stock_qty > 0);
+export const inStock = (): Product[] => ALL.filter(isAvailable);
+export const outOfStock = (): Product[] => ALL.filter((p) => !isAvailable(p));
+export const bloomingNow = (): Product[] => ALL.filter((p) => p.bloom_now && isAvailable(p));
 
 export const bySlug = (slug: string): Product | undefined => ALL.find((p) => p.slug === slug);
 
@@ -40,7 +41,9 @@ export const genera = (): string[] =>
 
 export const difficulties: Difficulty[] = ["beginner", "intermediate", "expert"];
 
-export const isAvailable = (p: Product): boolean => p.stock_qty > 0;
+// Availability OVERRIDES quantity (BACKEND.md §B): explicit status decides if set, else quantity.
+export const isAvailable = (p: Product): boolean =>
+  p.availability ? !["out-of-stock", "discontinued"].includes(p.availability) : p.stock_qty > 0;
 
 export const latin = (p: Product): string => `${p.genus} ${p.species}`;
 

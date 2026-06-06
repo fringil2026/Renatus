@@ -172,6 +172,26 @@ Hard guarantees:
 - Dashboard: Advance/Phase buttons HONOR rehearsal — enabled with a visible **REHEARSAL** badge
   instead of blocked-on-deliverables. The config still has to be BINDING (the build order stands).
 
+**Step 1 of the rehearsal chain is a COMPLETENESS PASS (before any building) — "full" means complete
+coverage + the ENTIRE real catalog:**
+1. **Complete baseline.** Run any scrape method that hasn't run (incl. the rendered-browser pass).
+   For rehearsal only, the mirror runs with a raised but STILL-BOUNDED cap (e.g.
+   `MIRROR_MAX_FILES=5000 MIRROR_MAX_SECONDS=2700` — deliberate + logged, never unbounded) so every
+   product page is captured. Enumerate ALL product URLs from robots/sitemaps + the site's own
+   category/genus indexes; fetch any product pages the mirror missed.
+2. **Full feature census** over the complete evidence union — the rehearsal parity floor is EVERY
+   feature found (all CARRY-OVERs built, all STUB+FLAGs as honest stubs).
+3. **Entire catalog, exactly.** Extract ALL products (no limit) with the cover-image pairing — real
+   names, real photos at their largest honest variants, photo-less products as clean type-led cards.
+   Scraped prices/descriptions import as DRAFT-labelled REAL data (client facts pending owner
+   confirmation — labelled, never silently trusted, never fabricated where absent). Run the
+   correspondence verifier over the full set + generate the human QA sheet; the sign-off is a PENDING
+   DECISION (inbox), not a chain-blocker.
+4. **Phase 2 seeds Supabase with this COMPLETE catalog** — the rehearsal admin manages the real
+   inventory and the demo store browses everything the original sold.
+Report: products extracted vs the original site's catalog count (with evidence), photo-coverage
+stats, and any pages the scrape provably missed.
+
 ## Command 9 — "Prepare intake pack for <slug>"
 Trigger: auto-enqueued the moment a client reaches `baseline-ready` (also runnable by hand). Produces
 two documents in `02-intake/`, grounded ENTIRELY in baseline evidence — everything DRAFT-labelled,
