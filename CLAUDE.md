@@ -31,6 +31,13 @@ Trigger: status.stage == baseline-ready (dashboard tells the human when).
 6. Seed 02-intake/redirect-map.csv from url-inventory.csv (old URL column filled, new column proposed).
 7. `npm install && npm run build` in 03-site/ to verify; fix failures.
 8. Set stage=prototype, then awaiting-owner. Report: what was applied, what is DRAFT, what is blank.
+9. Generate `02-intake/deliverables-request.md` from `templates/deliverables-template.md` by
+   FILTERING AND SPECIALIZING: keep only rows relevant to this archetype, the detected stack,
+   and the spec's phases; drop the rest. SPECIALIZE from evidence — name the detected GA4 ID,
+   reference detected forms by their page, name the detected CMS/CDN. §2.1 and §2.2 are ALWAYS
+   BLOCKING and always kept. Populate §2.7 from any binding spec's "client facts required".
+   Append an "Omitted as not applicable" list, one line + reason per dropped row, so every
+   omission is auditable. (See "Process deliverables" below — this file then lives and updates.)
 
 ## Command 2 — "Finish <slug>"
 Trigger: 02-intake/owner-answers.txt exists (stage answers-received).
@@ -81,6 +88,15 @@ Deploy the current `03-site` build as a PRIVATE preview for owner review.
 First run only: wrangler isn't set up. Do NOT fail — walk the human through the one-time
 setup (`npm i -g wrangler` then `wrangler login`, which opens a browser), then continue.
 This is a preview, not a launch: no DNS, no custom domain, no MX/email changes.
+
+## Command 7 — "Process deliverables for <slug>"
+`02-intake/deliverables-request.md` is a LIVING document. As answers and assets arrive,
+update each row's **status** IN PLACE (NEEDED → REQUESTED → RECEIVED → VERIFIED) — rows are
+never deleted, only re-statused. On "Process deliverables for <slug>": reconcile the new
+information into the rows, then report (a) what is still **BLOCKING** (nothing launches until
+these are RECEIVED/VERIFIED — §2.1 and §2.2 always count), and (b) which build phase each
+newly-unblocked item releases. When a received asset confirms provenance, that also clears the
+matching image/copy FOR REVIEW flag at "Finish".
 
 ## Build specs (binding build orders)
 Any `.md` file in a client's `02-intake/specs/` is a BINDING build order, not a
