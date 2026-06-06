@@ -63,6 +63,37 @@ NEXT = {
 def now(): return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%SZ")
 def slugify(s): return re.sub(r"-+", "-", re.sub(r"[^a-z0-9]+", "-", s.lower())).strip("-") or "client"
 
+def parse_ts(s):
+    try: return datetime.strptime(s, "%Y-%m-%d %H:%M:%SZ").replace(tzinfo=timezone.utc)
+    except Exception: return None
+
+def rel_time(s):
+    t = parse_ts(s)
+    if not t: return ""
+    secs = (datetime.now(timezone.utc) - t).total_seconds()
+    for div, unit in ((86400, "d"), (3600, "h"), (60, "m")):
+        if secs >= div: return f"{int(secs // div)}{unit} ago"
+    return "just now"
+
+def site_newer_than(cdir, iso):
+    """True if any 03-site source file is newer than the given preview timestamp. 03-site is
+    git-ignored so there are no commits to compare — file mtime is the practical equivalent."""
+    t = parse_ts(iso)
+    if not t: return False
+    site = cdir / "03-site"
+    if not site.exists(): return False
+    newest = 0.0
+    for name in ("src", "public", "tokens.json", "astro.config.mjs"):
+        p = site / name
+        if p.is_file():
+            newest = max(newest, p.stat().st_mtime)
+        elif p.is_dir():
+            for dp, _, fs in os.walk(p):
+                for f in fs:
+                    try: newest = max(newest, (Path(dp) / f).stat().st_mtime)
+                    except OSError: pass
+    return newest > t.timestamp()
+
 def read_status(d):
     try: return json.loads((d / "status.json").read_text())
     except Exception: return {"stage": "unknown", "log": []}
@@ -156,9 +187,12 @@ def list_clients():
                     "rerun": stage == "error",
                     "done": stage in ("final", "cutover-checked"),
                     "preview_url": st.get("preview_url", ""),
+                    "production_url": st.get("production_url", ""),
                     "preview_stale": st.get("preview_stale", False),
                     "preview_at": st.get("preview_published_at", ""),
-                    "log": st.get("log", [])[-3:]})
+                    "preview_rel": rel_time(st.get("preview_published_at", "")),
+                    "preview_behind": bool(st.get("preview_url")) and site_newer_than(d, st.get("preview_published_at", "")),
+                    "log": st.get("log", [])[-4:]})
     return out
 
 # ---------------- HTTP ----------------
@@ -199,9 +233,12 @@ border:1px solid var(--amber2);color:var(--amber);padding:.25em .7em;white-space
 .next{font-family:var(--m);font-size:.78rem;background:var(--panel2);
 border-left:3px solid var(--amber);padding:.55rem .8rem;margin-top:.7rem}
 .log{font-family:var(--m);font-size:.65rem;color:var(--muted);margin-top:.5rem;white-space:pre-wrap}
-.prev{font-family:var(--m);font-size:.7rem;margin-top:.5rem}
+.prev{font-family:var(--m);font-size:.7rem;margin-top:.5rem;display:flex;align-items:center;gap:.5rem;flex-wrap:wrap}
 .prev a{color:var(--amber);text-decoration:none}
-.prev .pdate{color:var(--muted)}
+.prev a.pvw{border:1px solid var(--amber2);padding:.1em .55em}
+.prev a.live{background:#3a6b4f;color:#fff;border:1px solid #3a6b4f;padding:.12em .6em;font-weight:600}
+.prev .pdate,.prev .purl{color:var(--muted)}
+.prev .copy{cursor:pointer;color:var(--muted)}.prev .copy:hover{color:var(--amber)}
 .prev .stale{color:#ff5d5d;font-weight:600}
 .paste{margin-top:.8rem;display:grid;gap:.5rem}.paste textarea{width:100%;min-height:7rem}
 .empty{color:var(--muted);font-family:var(--m);font-size:.8rem}
@@ -235,7 +272,8 @@ async function load(){
       <button class="${c.done?'done':'ghost'}" onclick="if(confirm('Archive ${c.slug}? Moves it to archive/ and clears this row.'))act('/archive','${c.slug}')">Archive</button>
     </div></div>
     <div class="next">${c.next}</div>
-    ${c.preview_url?`<div class="prev">preview: <a href="${c.preview_url}" target="_blank" rel="noopener">${c.preview_url}</a>${c.preview_stale?' <span class="stale">⚠ stale — last deploy failed, redeploy</span>':` <span class="pdate">${c.preview_at}</span>`}</div>`:''}
+    ${c.production_url?`<div class="prev"><a class="live" href="${c.production_url}" target="_blank" rel="noopener">Live ↗</a> <span class="copy" title="Copy URL" onclick="cp('${c.production_url}')">⧉</span> <span class="purl">${c.production_url}</span></div>`:''}
+    ${c.preview_url?`<div class="prev"><a class="pvw" href="${c.preview_url}" target="_blank" rel="noopener">Preview ↗</a> <span class="copy" title="Copy URL" onclick="cp('${c.preview_url}')">⧉</span> <span class="pdate">${c.preview_rel||c.preview_at}</span>${c.preview_stale?' <span class="stale">⚠ last deploy failed</span>':(c.preview_behind?' <span class="stale">⚠ preview behind latest edits</span>':'')}</div>`:''}
     ${c.paste?`<form class="paste" onsubmit="return answers(event,'${c.slug}')">
       <textarea placeholder="Step 2 — paste the owner's questionnaire summary here…"></textarea>
       <button>Save owner answers</button></form>`:''}
@@ -247,6 +285,7 @@ async function newClient(e){ e.preventDefault();
 async function answers(e,slug){ e.preventDefault();
   await api('/answers', {slug, t:e.target.querySelector('textarea').value}); load(); return false; }
 async function act(p,slug){ await api(p,{slug}); load(); }
+function cp(t){ navigator.clipboard&&navigator.clipboard.writeText(t); }
 load(); setInterval(load, 4000);
 </script></body></html>"""
 
