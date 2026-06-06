@@ -48,6 +48,29 @@ The human normally archives via the dashboard button; if asked: verify stage is 
 cutover-checked (warn otherwise), then move clients/<slug>/ to archive/<slug>-<YYYYmmdd-HHMMSS>/.
 Never delete client folders; archive is the only removal path.
 
+## Command 5 — "Process edits for <slug>"
+Every revision request to a built site lives as a file:
+`clients/<slug>/02-intake/edits/NNN-PENDING-<short-name>.md`, authored from
+`templates/edit-template.md`. The filename IS the state — `PENDING` / `DONE` / `BLOCKED`.
+`ls 02-intake/edits/` is the ledger: PENDING is the to-do list, DONE is closed history,
+BLOCKED names the fact it waits on. State lives in the artifact, not in memory.
+
+On "Process edits for <slug>", handle every PENDING file in ascending numeric order:
+1. Implement the change in 03-site/.
+2. Verify with `npm run build` (in 03-site/); a failing build is not done.
+3. Fill `## Resolution` — what changed, files touched, commit hash, date.
+4. Set frontmatter `status: DONE` and rename the file `NNN-PENDING-…` → `NNN-DONE-…`.
+5. Commit, ONE commit per edit, message `edit NNN: <scope>`.
+If an edit needs a missing client fact or conflicts with a Hard rule: do NOT implement it
+— write the blocking reason (the exact missing fact or rule) into `## Resolution`, set
+`status: BLOCKED`, rename to `NNN-BLOCKED-…`, commit, and CONTINUE to the next edit.
+DONE and BLOCKED files are immutable — never edited, never reprocessed. If an edit-id is
+duplicated, the highest NNN wins.
+
+When the human describes a change conversationally ("make the hero bigger, add a shipping
+FAQ"), do NOT just do it: first author the edit file from the template (next NNN, PENDING),
+SHOW it to the human, then process it. The record must always exist before the change does.
+
 ## Build specs (binding build orders)
 Any `.md` file in a client's `02-intake/specs/` is a BINDING build order, not a
 suggestion. When assembling a prototype or finishing a client, read every spec in

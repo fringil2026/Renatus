@@ -34,7 +34,8 @@ if HOST not in ("127.0.0.1", "localhost") and not TOKEN:
     TOKEN = secrets.token_urlsafe(9)
     print(f"[studio] public bind without STUDIO_TOKEN — generated one: {TOKEN}")
 
-SUBDIRS = ["00-source", "01-baseline", "02-intake/assets", "02-intake/specs", "03-site", "04-cutover"]
+SUBDIRS = ["00-source", "01-baseline", "02-intake/assets", "02-intake/specs",
+           "02-intake/edits", "03-site", "04-cutover"]
 LOCK = threading.Lock()
 RUNNING = {}   # slug -> Popen
 QUEUE = []     # [(slug, domain)]
