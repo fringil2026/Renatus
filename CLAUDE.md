@@ -41,6 +41,10 @@ Trigger: status.stage == baseline-ready (dashboard tells the human when).
    BLOCKING and always kept. Populate §2.7 from any binding spec's "client facts required".
    Append an "Omitted as not applicable" list, one line + reason per dropped row, so every
    omission is auditable. (See "Process deliverables" below — this file then lives and updates.)
+10. Generate `01-baseline/block-purpose-map.md` — the audit trail for Purpose-first
+    reconstruction (above). A table: source block (page + brief identifier) → purpose
+    designation → target component (existing or new) → improvement made. It proves every block
+    of the original was UNDERSTOOD, not transcribed. (Refreshed at "Finish" too.)
 
 ## Command 2 — "Finish <slug>"
 Trigger: 02-intake/owner-answers.txt exists (stage answers-received).
@@ -112,6 +116,16 @@ Catalog-build verification step (run before declaring a catalog build done): spo
 built products against their source pages (the `source_page` recorded per record) — confirm the
 rendered name/species matches the photo's origin page. ANY name↔photo mismatch is a BUILD FAILURE
 to fix before reporting, not a cosmetic note.
+
+## Purpose-first reconstruction — binding build rule
+NEVER port or restyle source markup. For every content/UI block in the scraped source, FIRST
+designate its broad PURPOSE with a plain name — announcement banner, trust strip, category index,
+product card, promo/offer, hours-or-policy notice, guarantee statement, testimonial, contact
+strip, newsletter capture, etc. — and RECORD that designation. THEN implement the best modern
+expression of that purpose using the component catalog (or a new component): improving aesthetics
+and functionality is the EXPECTATION; fidelity to the old markup is explicitly NOT a goal. A block
+whose purpose can't be confidently designated is flagged for the human's judgment, never copied.
+Components are NAMED BY PURPOSE, never by appearance (`AnnouncementBanner`, not `GreenStripe`).
 
 ## Build specs (binding build orders)
 Any `.md` file in a client's `02-intake/specs/` is a BINDING build order, not a

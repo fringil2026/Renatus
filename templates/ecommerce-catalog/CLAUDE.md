@@ -24,6 +24,10 @@ clients/<slug>/03-site`, then customize the copy.
   Staging emits `noindex`; production: `PUBLIC_INDEXABLE=true npm run build`.
 
 ## Component catalog — the shared vocabulary
+This catalog is a PURPOSE vocabulary: scraped source blocks map into it by DESIGNATION (what the
+block is FOR), never by appearance. A gap in the vocabulary means create a new purpose-named
+component — never inline one-off markup to mimic the old site.
+
 | Name | In plain terms | File |
 |---|---|---|
 | Specimen card | THE signature unit: photo + herbarium tag (Latin name, origin, care glyphs, difficulty dot, price). OOS → desaturated photo + "In Cultivation" stamp + Notify CTA | `src/components/SpecimenCard.astro` |

@@ -42,6 +42,9 @@ placeholder and a FOR REVIEW entry — not a guess.
 
 ## Component catalog — the shared vocabulary
 When the user names a block below, this is what they mean and where it lives.
+This catalog is a PURPOSE vocabulary: scraped source blocks map into it by DESIGNATION (what the
+block is FOR), never by appearance. A gap in the vocabulary means create a new purpose-named
+component — never inline one-off markup to mimic the old site.
 
 | Name | In plain terms | File | Variants / options |
 |---|---|---|---|

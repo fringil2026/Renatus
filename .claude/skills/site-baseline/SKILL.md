@@ -31,6 +31,11 @@ is the prototype's parity floor; STUB+FLAG rows name the deliverables §2.7 fact
 them. A second tool, `scripts/extract_catalog.py`, pulls a real product catalog (name+photo
 per source page) from the mirror for image-bearing builds.
 
+`block-purpose-map.md` is also written into 01-baseline/ — but at BUILD time (Command 1 /
+"Finish"), not by the scrapers. It is the Purpose-first reconstruction audit trail: a table
+mapping each source block (page + identifier) → its purpose designation → the target component
+→ the improvement made, proving every original block was understood rather than transcribed.
+
 ## Interpreting for the prototype
 - coverage.md lists paths missed by any single method — investigate before trusting the inventory.
 - tech-fingerprint.md GA4 IDs and detected services seed brief.yaml integrations and the
