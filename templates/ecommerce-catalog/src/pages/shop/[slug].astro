@@ -47,7 +47,7 @@ const careRows = [
       </div>
 
       <div class="flex flex-col">
-        {product.bloom_now && available && <p class="eyebrow">In bloom now</p>}
+        {product.bloom_now && available && <p class="eyebrow eyebrow--leaf">In bloom now</p>}
         <h1 class="latin mt-1 text-5xl leading-none text-ink">{latin(product)}</h1>
         <p class="mt-2 text-xl text-ink/80">{product.common_name}</p>
         <p class="mono-label mt-2">{product.origin} · SKU {product.id}</p>
@@ -88,7 +88,7 @@ const careRows = [
           )}
         </div>
         {available ? (
-          <p class="mono-label mt-3">{product.stock_qty} in cultivation, ready to ship</p>
+          <p class="mono-label mt-3" style="color:var(--color-leaf)">{product.stock_qty} in cultivation, ready to ship</p>
         ) : (
           <p class="mono-label mt-3">Currently growing — join the notify list above</p>
         )}

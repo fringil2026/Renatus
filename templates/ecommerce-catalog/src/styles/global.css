@@ -15,6 +15,9 @@
   --color-ink: #22251f;            /* graphite ink — body text */
   --color-line: #d8cfb8;           /* hairline rule on paper */
   --color-line-dark: #34503f;      /* hairline rule on green */
+  --color-leaf: #6ea820;           /* HERITAGE ACCENT — override per client from their existing
+                                      brand color. Here: Andy's original site green (its dominant
+                                      colour, 120x in the scrape) — the "Andy's, modernized" bridge. */
 
   --font-display: "Cormorant Garamond", "Hoefler Text", Georgia, serif;
   --font-body: "Public Sans", "Helvetica Neue", system-ui, sans-serif;
@@ -117,3 +120,9 @@ body {
   text-transform: uppercase;
   color: var(--color-petal);
 }
+/* Heritage-green eyebrow — the recognizable Andy's leaf green, used for living/growth cues */
+.eyebrow--leaf { color: var(--color-leaf); }
+
+/* Heritage keyline — a thin leaf-green bar at the very top of the chrome, echoing the
+   original site's green branding (the "Andy's, modernized" signal). */
+.heritage-keyline { height: 3px; background: var(--color-leaf); }

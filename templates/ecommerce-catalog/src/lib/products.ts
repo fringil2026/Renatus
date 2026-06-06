@@ -48,4 +48,4 @@ export const priceLabel = (p: Product): string =>
   new Intl.NumberFormat("en-US", { style: "currency", currency: p.currency }).format(p.price_cents / 100);
 
 export const difficultyColor = (d: Difficulty): string =>
-  d === "beginner" ? "var(--color-moss)" : d === "intermediate" ? "var(--color-conservatory)" : "var(--color-petal)";
+  d === "beginner" ? "var(--color-leaf)" : d === "intermediate" ? "var(--color-conservatory)" : "var(--color-petal)";
