@@ -54,16 +54,19 @@ STUDIO_KEY = "__studio__"
 TASKS = {}            # key -> {kind, label, started, tail[], proc}
 TASK_LOCK = threading.Lock()
 
+# Status DESCRIPTIONS only — never a command to type. Every actionable stage carries a real
+# button (see advance_action / full_build_action); the "Copy command" ⧉ link is the terminal
+# escape hatch. No ".next" line ever instructs the human to run something in a terminal.
 NEXT = {
     "queued":           "Queued — waiting for a free scrape slot…",
     "created":          "Queued…",
     "scraping":         "Scraping in progress (3 methods)…",
-    "error":            "Scrape error — see log; use Rerun.",
-    "baseline-ready":   'In terminal:  claude  →  "Assemble prototype for {slug}"',
-    "prototype":        "Prototype built — send the owner questionnaire.",
-    "awaiting-owner":   "Waiting on owner — paste their answers below.",
-    "answers-received": 'In terminal:  claude  →  "Finish {slug}"',
-    "final":            'In terminal:  claude  →  "Run cutover prechecks for {slug}"',
+    "error":            "Scrape error — see the log, then use Rerun.",
+    "baseline-ready":   "Baseline ready — pick a concept board, then Assemble (or run a Full build).",
+    "prototype":        "Prototype built — send the owner questionnaire, or run a Full build from here.",
+    "awaiting-owner":   "Prototype built — paste the owner's answers below when they arrive.",
+    "answers-received": "Owner answers received — Finish to apply them.",
+    "final":            "Final build complete — run the cutover prechecks.",
     "cutover-checked":  "Launch-ready — follow 04-cutover/launch-runbook.md, then Archive.",
 }
 
@@ -288,6 +291,140 @@ def run_advance(slug, command, kind="advance", fail_flag="advance_failed"):
         write_status(cdir, st)
     with TASK_LOCK: TASKS.pop(slug, None)
 
+# ---------------- full build (one-click chained rehearsal build) ----------------
+# Two variants share ONE underlying chain; entry point + step list differ by stage.
+#   from-scratch    (baseline-ready, no prototype): scrape→assemble(auto-accept concept)→…→publish
+#   from-prototype  (prototype & later): PRESERVE the built prototype; run only what's missing.
+# studio.py owns the control surface (button, slug-typed confirm, precondition gate, the
+# step artifact, the row step-log, and resume). The chain itself is executed by `claude -p`
+# driving the runbook below; Claude updates 02-intake/full-build-progress.json after each step,
+# so the build is resumable (re-running skips steps already marked done) and the row shows live
+# progress. TEST banners + cutover-refusal are unchanged (enforced by the existing guarantees).
+FULL_BUILD_STEPS = {
+    "from-scratch": [
+        ("precond",  "Precondition — TEST credentials present + tagged REHEARSAL"),
+        ("rehearsal","Enter rehearsal mode (backend-config mode: rehearsal; TEST banners on)"),
+        ("scrape",   "Complete-coverage re-scrape + full-catalog extraction (cover-paired, DRAFT facts)"),
+        ("assemble", "Assemble prototype to the RECOMMENDED concept (auto-accepted) — parity floor, build, publish"),
+        ("config",   "Propose + auto-bind backend config (DRAFT→BINDING) from the evidence"),
+        ("phase2",   "Phase 2 — Supabase catalog/admin/content + RLS/audit on test resources"),
+        ("phase3",   "Phase 3 — Stripe TEST checkout + orders webhook"),
+        ("phase4",   "Phase 4 — Resend test domain: notify + comms loop"),
+        ("publish",  "Final build + publish preview; refresh status.json"),
+    ],
+    "from-prototype": [
+        ("precond",  "Precondition — TEST credentials present + tagged REHEARSAL"),
+        ("rehearsal","Enter rehearsal mode (if not already)"),
+        ("preserve", "Verify existing prototype intact — processed edits, chosen concept, design KEPT as built"),
+        ("config",   "Backend config — auto-bind if none BINDING; if a BINDING config exists, USE it untouched"),
+        ("phase2",   "Phase 2 — Supabase catalog/admin/content + RLS/audit on test resources"),
+        ("phase3",   "Phase 3 — Stripe TEST checkout + orders webhook"),
+        ("phase4",   "Phase 4 — Resend test domain: notify + comms loop"),
+        ("publish",  "Final build + publish preview; refresh status.json"),
+    ],
+}
+
+def test_creds_ready(cdir):
+    """Precondition for a full REHEARSAL build: a secrets/.env with at least the rehearsal
+    Supabase test creds, tagged # REHEARSAL. Secrets are git-ignored, read-only here."""
+    f = cdir / "02-intake" / "secrets" / ".env"
+    if not f.exists():
+        return False
+    txt = f.read_text()
+    return ("SUPABASE_URL" in txt) and ("# REHEARSAL" in txt or "#REHEARSAL" in txt)
+
+def fb_progress_path(cdir): return cdir / "02-intake" / "full-build-progress.json"
+
+def read_full_build(cdir):
+    f = fb_progress_path(cdir)
+    if not f.exists(): return None
+    try: return json.loads(f.read_text())
+    except Exception: return None
+
+def init_full_build(cdir, variant):
+    steps = [{"id": k, "title": t, "status": "pending", "note": "", "at": ""}
+             for k, t in FULL_BUILD_STEPS.get(variant, [])]
+    prog = {"variant": variant, "started": now(), "updated": now(), "blocked_on": "", "steps": steps}
+    fb_progress_path(cdir).write_text(json.dumps(prog, indent=2))
+    return prog
+
+def full_build_runbook(slug, variant):
+    """The chain instruction handed to `claude -p`. Self-describing + resumable via the progress
+    file. Authored to make every recommended decision automatically ONLY for from-scratch."""
+    auto = ("This is FROM-SCRATCH: make every recommended decision automatically — if the "
+            "'Choose the design concept' decision is still OPEN, resolve it to the RECOMMENDED "
+            "option (record that the full build auto-accepted it) and do NOT wait."
+            if variant == "from-scratch" else
+            "This is FROM-PROTOTYPE: PRESERVE the existing prototype EXACTLY — keep every processed "
+            "edit, the chosen concept, and all design decisions. Run ONLY the steps that are missing. "
+            "If a BINDING backend-config already exists, USE it untouched — never overwrite confirmed decisions.")
+    return (
+        f"FULL BUILD ({variant}) for {slug}. Drive the chain in "
+        f"clients/{slug}/02-intake/full-build-progress.json. Read it first; for each step whose "
+        f"status is not 'done', set it to 'active' (write the file), do the work, then set it to "
+        f"'done' with a one-line note + UTC timestamp and write the file again — so the build is "
+        f"resumable and the dashboard shows live progress. {auto} "
+        f"Step 'precond': confirm clients/{slug}/02-intake/secrets/.env has rehearsal TEST creds "
+        f"tagged '# REHEARSAL'; if missing, mark the step 'blocked', set blocked_on, OPEN a decision "
+        f"in the inbox, and STOP. Build to ECOMMERCE-GUIDELINES.md + BACKEND.md + the BINDING "
+        f"backend-config; honor the parity floor and every Hard rule; keep TEST MODE banners on every "
+        f"surface; cutover stays refused while any # REHEARSAL credential is in use. On ANY fork that "
+        f"needs the human's judgment, do NOT guess — open a decision (02-intake/decisions/NNN-OPEN-*.yaml) "
+        f"with resume_job set so resolving it resumes this build, leave the step 'active', and STOP. "
+        f"Each completed step still obeys PUBLISH-ALWAYS. When all steps are done, report what was built.")
+
+def full_build_action(slug, st):
+    """Stage-gated full-build button (mutually exclusive variants). Returns
+    {variant,label,enabled,tooltip,desc,resumable,steps} or None."""
+    stage = st.get("stage", "")
+    cdir = CLIENTS / slug
+    if stage == "baseline-ready":
+        variant = "from-scratch"
+    elif stage in ("prototype", "awaiting-owner", "answers-received", "final"):
+        variant = "from-prototype"
+    else:
+        return None   # queued/created/scraping/error/cutover-checked — no full build
+    prog = read_full_build(cdir)
+    resumable = bool(prog and prog.get("variant") == variant
+                     and any(s["status"] != "done" for s in prog.get("steps", [])))
+    done_all = bool(prog and prog.get("variant") == variant
+                    and prog.get("steps") and all(s["status"] == "done" for s in prog["steps"]))
+    if variant == "from-scratch":
+        label = "Resume full build" if resumable else "Full build — from scratch"
+        desc = ("Runs the COMPLETE chain automatically and makes every recommended decision for you: "
+                "rehearsal mode → complete-coverage scrape + full catalog → assemble the recommended "
+                "concept → auto-bind backend config → Phases 2–4 on TEST credentials → publish. "
+                "Concept boards are generated and recorded, but the chain does not wait for your pick.")
+    else:
+        label = "Resume full build" if resumable else "Full build — from this prototype"
+        desc = ("KEEPS the prototype exactly as built — all processed edits, the chosen concept, and "
+                "design decisions stand. Runs only what's missing: rehearsal mode → backend config "
+                "(auto-bind if none is BINDING; an existing BINDING config is used untouched) → "
+                "Phases 2–4 on TEST credentials → publish.")
+    enabled, tooltip = True, ""
+    if slug in TASKS:
+        enabled, tooltip = False, "a Claude task is already running for this client"
+    elif done_all:
+        enabled, tooltip = False, "full build already complete for this prototype"
+    elif not test_creds_ready(cdir):
+        enabled = False
+        tooltip = ("needs rehearsal TEST credentials in 02-intake/secrets/.env "
+                   "(Supabase/Stripe-test/Resend, each tagged # REHEARSAL) before a rehearsal build")
+    return {"variant": variant, "label": label, "enabled": enabled, "tooltip": tooltip,
+            "desc": desc, "resumable": resumable,
+            "steps": prog.get("steps", []) if prog and prog.get("variant") == variant else []}
+
+def read_concept_boards(cdir):
+    """02-intake/concepts/boards.json -> list of board dicts for the visual decision + Documents."""
+    f = cdir / "02-intake" / "concepts" / "boards.json"
+    if not f.exists(): return None
+    try: m = json.loads(f.read_text())
+    except Exception: return None
+    base = (m.get("deploy_url") or "").rstrip("/")
+    for b in m.get("boards", []):
+        b["url"] = f"{base}/{b.get('path','').lstrip('/')}" if base else ""
+    return m
+
 def has_binding_spec(cdir):
     specs = cdir / "02-intake" / "specs"
     if not specs.exists(): return False
@@ -442,8 +579,9 @@ def parse_decision(path):
             d["context"].append(s[2:].strip().strip('"')); continue
         if section == "options":
             if s.startswith("- "):
-                cur = {"id": "", "label": "", "consequence": "", "next": ""}; d["options"].append(cur); s = s[2:].strip()
-            mm = re.match(r'^(id|label|consequence|next):\s*(.*)$', s)
+                cur = {"id": "", "label": "", "consequence": "", "next": "", "board_url": "", "thumb": ""}
+                d["options"].append(cur); s = s[2:].strip()
+            mm = re.match(r'^(id|label|consequence|next|board_url|thumb):\s*(.*)$', s)
             if mm and cur is not None:
                 cur[mm.group(1)] = mm.group(2).strip().strip('"')
     return d
@@ -510,6 +648,8 @@ def list_clients():
                     "preview_behind": bool(st.get("preview_url")) and site_newer_than(d, st.get("preview_published_at", "")),
                     "advance_failed": st.get("advance_failed", False),
                     "advance": advance_action(d.name, st),
+                    "full_build": full_build_action(d.name, st),
+                    "concepts": (read_concept_boards(d) or {}).get("boards", []),
                     "can_configure": st.get("stage") == "prototype" and has_binding_spec(d),
                     "backend_cfg": (lambda c: {"status": c["status"], "version": c["version"], "mode": c.get("mode", "")} if c else None)(parse_backend_config(d)),
                     "busy": d.name in TASKS,
@@ -625,6 +765,26 @@ padding:.5rem .7rem;margin-top:.5rem;white-space:pre-wrap;max-height:9rem;overfl
 .citem{display:flex;gap:.5rem;align-items:flex-start;font-size:.78rem;padding:.3rem 0;border-bottom:1px solid var(--line)}
 .citem .lk{color:#7fd18f}.citem .rsn{color:var(--muted);font-family:var(--m);font-size:.66rem}
 .cfgdef summary{cursor:pointer;color:var(--muted);font-family:var(--m);font-size:.72rem}
+button.adv.fb{border-color:#7a4dff;color:#b79cff}
+button.adv.fb:hover:not([disabled]){background:#7a4dff;color:#fff}
+button.adv.fb[disabled]{color:var(--muted);border-color:var(--line);opacity:.6}
+.fbsteps{margin-top:.6rem;border:1px solid #3a2f5e;background:#140e22;padding:.6rem .8rem;font-family:var(--m);font-size:.66rem}
+.fbhead{color:#b79cff;letter-spacing:.08em;text-transform:uppercase;margin-bottom:.45rem}
+.fbstep{padding:.12rem 0;color:var(--muted)}
+.fbstep.done{color:#7fd18f}.fbstep.active{color:#ffd479}.fbstep.blocked{color:#ff8a8a}
+.fbstep .fbg{display:inline-block;width:1.1em}.fbn{color:var(--muted);font-style:italic}
+.decboards{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:.9rem;margin-top:.6rem}
+.bcard{border:1px solid var(--line);background:var(--panel2);padding:.5rem}
+.bcard.rec{border-color:var(--amber)}
+.bthumblink{display:block;position:relative}
+.bthumb{width:100%;height:auto;display:block;border:1px solid var(--line);background:#000;min-height:6rem}
+.brec{position:absolute;top:.4rem;left:.4rem;background:var(--amber);color:var(--ink);font-family:var(--m);font-size:.56rem;letter-spacing:.08em;text-transform:uppercase;padding:.15em .5em}
+.bname{font-family:var(--d);text-transform:uppercase;font-size:1rem;margin:.5rem 0 .2rem}
+.bone{font-family:var(--m);font-size:.64rem;color:var(--muted);line-height:1.4}
+.brow{display:flex;justify-content:space-between;align-items:center;margin-top:.5rem;gap:.5rem}
+.blink{color:var(--amber);font-family:var(--m);font-size:.66rem;text-decoration:none}
+.bchoose{background:var(--amber);color:var(--ink);border:1px solid var(--amber);font-family:var(--b);font-weight:600;font-size:.74rem;text-transform:none;padding:.3em .8em}
+.bchoose:hover{background:transparent;color:var(--amber)}
 </style></head><body><div class="wrap">
 <h1>Web Studio</h1><p class="sub">Two human steps · everything else automated</p>
 <p class="stats" id="stats"></p>
@@ -776,6 +936,22 @@ function openAdvance(slug){
   };
   document.getElementById('modal').style.display='flex'; inp.focus();
 }
+function openFullBuild(slug){
+  const c=findC(slug); if(!c||!c.full_build||!c.full_build.enabled) return;
+  document.getElementById('m-title').textContent=(c.full_build.resumable?'Resume full build':c.full_build.label)+' — '+slug;
+  document.getElementById('m-desc').textContent=c.full_build.desc||'';
+  document.getElementById('m-cmd').textContent = c.full_build.variant==='from-scratch'
+    ? 'FROM SCRATCH — auto-runs the whole chain and makes every RECOMMENDED decision for you (concept + backend config). Boards are still generated and recorded. TEST-mode rehearsal build; cutover stays blocked until you swap to the client\\'s real accounts.'
+    : 'FROM THIS PROTOTYPE — KEEPS everything already built (processed edits, chosen concept, design). An existing BINDING backend-config is used untouched. Runs only what is missing. TEST-mode rehearsal build; cutover stays blocked until you swap to real accounts.';
+  document.getElementById('m-unmet').textContent = c.full_build.resumable ? 'Resumes from the last completed step (see the row).' : '';
+  document.getElementById('m-slug').textContent=slug;
+  const inp=document.getElementById('m-input'); inp.value='';
+  document.getElementById('m-run').onclick=async()=>{
+    const r=await api('/api/full-build',{slug,confirm:inp.value.trim()});
+    if(r.error){ alert('Cannot start: '+r.error); } else { closeModal(); load(); }
+  };
+  document.getElementById('modal').style.display='flex'; inp.focus();
+}
 async function load(){
   saveDrafts();
   const d = await api('/api/clients'); DATA = d;
@@ -790,6 +966,7 @@ async function load(){
       ${c.decisions_open?`<span class="needbadge">${c.decisions_open} decision${c.decisions_open>1?'s':''}</span>`:''}
       ${c.busy?'<span class="run">● running…</span>':''}
       ${c.advance?`<button class="adv" ${c.advance.enabled?'':'disabled'} title="${(c.advance.tooltip||c.advance.desc||'').replace(/"/g,'&quot;')}" onclick="openAdvance('${c.slug}')">${c.advance.label}</button>${c.advance.badge?`<span class="rehbadge">${c.advance.badge}</span>`:''}<span class="copy" title="Copy terminal command" onclick="cpCmd('${c.slug}')">⧉</span>`:''}
+      ${c.full_build?`<button class="adv fb" ${c.full_build.enabled?'':'disabled'} title="${(c.full_build.tooltip||c.full_build.desc||'').replace(/"/g,'&quot;')}" onclick="openFullBuild('${c.slug}')">${c.full_build.resumable?'⟳ ':'⚡ '}${c.full_build.label}</button>`:''}
       ${c.can_configure?`<button class="ghost" onclick="configBackend('${c.slug}')">Configure backend${c.backend_cfg?` · ${c.backend_cfg.status} v${c.backend_cfg.version}`:''}</button>`:''}
       ${c.backend_cfg?(c.backend_cfg.mode==='rehearsal'?`<span class="rehbadge">REHEARSAL</span><button class="ghost" onclick="exitReh('${c.slug}')">Exit rehearsal</button>`:`<button class="ghost" onclick="enterReh('${c.slug}')">Enter rehearsal mode</button>`):''}
       ${d.server?(d.ttyd_url?`<a class="ghost" href="${d.ttyd_url}" target="_blank" rel="noopener">Open session ↗</a>`:''):`<button class="ghost" onclick="api('/open',{slug:'${c.slug}'})">Claude: ${c.name}</button>`}
@@ -798,10 +975,12 @@ async function load(){
     </div></div>
     <div class="next">${c.next}</div>
     ${c.busy&&c.task_tail.length?`<div class="tasktail">${c.task_tail.map(t=>t.replace(/[<>]/g,'')).join('\\n')}</div>`:''}
+    ${c.full_build&&c.full_build.steps&&c.full_build.steps.length?`<div class="fbsteps"><div class="fbhead">⚡ Full build · ${c.full_build.variant} · ${c.full_build.resumable?'in progress (resumable)':'complete'}</div>${c.full_build.steps.map(s=>`<div class="fbstep ${s.status}"><span class="fbg">${s.status==='done'?'✓':s.status==='active'?'●':s.status==='blocked'?'⚠':'○'}</span> <span class="fbt">${esc(s.title)}</span>${s.note?` <span class="fbn">— ${esc(s.note)}</span>`:''}</div>`).join('')}</div>`:''}
     ${c.advance_failed&&!c.busy?`<div class="prev"><span class="stale">⚠ advance failed — see log</span></div>`:''}
     ${c.production_url?`<div class="prev"><a class="live" href="${c.production_url}" target="_blank" rel="noopener">Live ↗</a> <span class="copy" title="Copy URL" onclick="cp('${c.production_url}')">⧉</span> <span class="purl">${c.production_url}</span></div>`:''}
     ${c.preview_url?`<div class="prev"><a class="pvw" href="${c.preview_url}" target="_blank" rel="noopener">Preview ↗</a> <span class="copy" title="Copy URL" onclick="cp('${c.preview_url}')">⧉</span> <span class="pdate">${c.preview_rel||c.preview_at}</span>${c.preview_stale?' <span class="stale">⚠ last deploy failed</span>':(c.preview_behind?' <span class="stale">⚠ preview behind latest edits</span>':'')}</div>`:''}
     ${c.documents&&c.documents.length?`<div class="docs"><span class="mono-label">documents</span> ${c.documents.map(n=>`<button class="docbtn" onclick="openDoc('${c.slug}','${n}')">${n}</button>`).join(' ')}</div>`:''}
+    ${c.concepts&&c.concepts.length?`<div class="docs"><span class="mono-label">concept boards</span> ${c.concepts.map(b=>`<a class="docbtn" href="${b.url||'#'}" target="_blank" rel="noopener" title="${esc(b.one_liner)}">${b.recommended?'★ ':''}${esc(b.name)} ↗</a><a class="docbtn" href="/api/concept-thumb?slug=${c.slug}&name=${esc(b.thumb_desktop)}" target="_blank" rel="noopener" title="desktop screenshot">🖼 png</a>`).join(' ')}</div>`:''}
     <form class="drop" onsubmit="return up(event,'${c.slug}')">
       <input type="file" accept=".md" required>
       <label><input type="radio" name="dest-${c.slug}" value="specs" checked> specs</label>
@@ -832,12 +1011,26 @@ function renderNeeds(decs){
   const box=document.getElementById('needs');
   if(!decs.length){ box.innerHTML=''; return; }
   box.innerHTML=`<div class="needstrip"><div class="needhead">⬤ Needs your call · ${decs.length}</div>`+
-    decs.map(dn=>`<div class="deccard">
+    decs.map(dn=>{
+      const isBoards = dn.options.some(o=>o.thumb);   // visual concept-board decision
+      const opts = isBoards
+        ? `<div class="decboards">${dn.options.map(o=>`
+            <div class="bcard ${o.id===dn.recommendation?'rec':''}">
+              <a class="bthumblink" href="${o.board_url||'#'}" target="_blank" rel="noopener" title="Open the live board ↗">
+                <img class="bthumb" loading="lazy" src="/api/concept-thumb?slug=${encodeURIComponent(dn.scope)}&name=${encodeURIComponent(o.thumb)}" alt="${esc(o.label||o.id)} board">
+                ${o.id===dn.recommendation?'<span class="brec">★ recommended</span>':''}</a>
+              <div class="bname">${esc(o.label||o.id)}</div>
+              <div class="bone">${esc(o.consequence)}</div>
+              <div class="brow"><a class="blink" href="${o.board_url||'#'}" target="_blank" rel="noopener">Open board ↗</a>
+                <button class="bchoose" onclick="resolveDec('${dn.scope}','${dn.file}','${o.id}')">Choose this</button></div>
+            </div>`).join('')}</div>`
+        : `<div class="decopts">${dn.options.map(o=>`<button class="${o.id===dn.recommendation?'decrec':'decopt'}" onclick="resolveDec('${dn.scope}','${dn.file}','${o.id}')" title="${esc(o.consequence)}">${o.id===dn.recommendation?'★ ':''}${esc(o.label||o.id)}</button>`).join('')}</div>`;
+      return `<div class="deccard">
       <div class="decq">${esc(dn.question)} <span class="decscope">${dn.scope==='__studio__'?'studio':esc(dn.scope)}</span></div>
       ${dn.context.length?`<ul class="decctx">${dn.context.map(c=>`<li>${esc(c)}</li>`).join('')}</ul>`:''}
-      <div class="decopts">${dn.options.map(o=>`<button class="${o.id===dn.recommendation?'decrec':'decopt'}" onclick="resolveDec('${dn.scope}','${dn.file}','${o.id}')" title="${esc(o.consequence)}">${o.id===dn.recommendation?'★ ':''}${esc(o.label||o.id)}</button>`).join('')}</div>
+      ${opts}
       ${dn.reason?`<div class="decreason">recommendation: ${esc(dn.reason)}</div>`:''}
-    </div>`).join('')+`</div>`;
+    </div>`;}).join('')+`</div>`;
 }
 async function resolveDec(scope,file,choice){
   const r=await api('/api/decisions/resolve',{scope,file,choice});
@@ -933,6 +1126,18 @@ class H(BaseHTTPRequestHandler):
             if name not in allowed or not f.exists():
                 return self._send("not found", code=404)
             self._send(f.read_text(), "text/plain")
+        elif path == "/api/concept-thumb":
+            q = parse_qs(urlparse(self.path).query)
+            slug = slugify(q.get("slug", [""])[0]); name = Path(q.get("name", [""])[0]).name
+            f = CLIENTS / slug / "02-intake" / "concepts" / name
+            if not name.endswith(".png") or not f.exists():
+                return self._send("not found", code=404)
+            b = f.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", "image/png")
+            self.send_header("Content-Length", str(len(b)))
+            self.end_headers()
+            self.wfile.write(b)
         else:
             self._send("not found", code=404)
 
@@ -987,6 +1192,30 @@ class H(BaseHTTPRequestHandler):
                 TASKS[slug] = {"kind": "advance", "label": act["command"], "started": now(), "tail": [], "proc": None}
             threading.Thread(target=run_advance, args=(slug, act["command"]), daemon=True).start()
             return self._send(json.dumps({"ok": True}), "application/json")
+        elif path == "/api/full-build":
+            slug = slugify(d.get("slug", ""))
+            cdir = CLIENTS / slug
+            if not cdir.exists():
+                return self._send(json.dumps({"error": "no such client"}), "application/json", 404)
+            fb = full_build_action(slug, read_status(cdir))   # revalidate server-side (stage-gated)
+            if not fb or not fb.get("enabled"):
+                return self._send(json.dumps({"error": fb.get("tooltip") if fb else "no full build available at this stage"}), "application/json", 400)
+            if d.get("confirm", "") != slug:
+                return self._send(json.dumps({"error": "type the slug exactly to confirm"}), "application/json", 400)
+            if not test_creds_ready(cdir):   # precondition gate (defense in depth)
+                return self._send(json.dumps({"error": "rehearsal TEST credentials missing in 02-intake/secrets/.env"}), "application/json", 400)
+            variant = fb["variant"]
+            if not fb.get("resumable"):       # fresh run: lay down the step artifact; resume keeps it
+                init_full_build(cdir, variant)
+            with TASK_LOCK:
+                if slug in TASKS:
+                    return self._send(json.dumps({"error": "a Claude task is already running for this client"}), "application/json", 409)
+                TASKS[slug] = {"kind": "full build", "label": f"full build ({variant})", "started": now(), "tail": [], "proc": None}
+            bump(cdir, msg=f"FULL BUILD {'resumed' if fb.get('resumable') else 'started'} ({variant})")
+            threading.Thread(target=run_advance,
+                             args=(slug, full_build_runbook(slug, variant), "full build", "full_build_failed"),
+                             daemon=True).start()
+            return self._send(json.dumps({"ok": True, "variant": variant}), "application/json")
         elif path == "/api/chat":
             slug = d.get("slug", "")
             key = STUDIO_KEY if slug in ("", "studio") else slugify(slug)

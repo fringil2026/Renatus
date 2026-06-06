@@ -114,6 +114,10 @@ Deploy the current `03-site` build as a PRIVATE preview for owner review.
 First run only: wrangler isn't set up. Do NOT fail — walk the human through the one-time setup
 (`npm i -g wrangler` then `wrangler login`, which opens a browser), then continue.
 This is a preview, not a launch: no DNS, no custom domain, no MX/email changes.
+**Concept boards are disposable:** deploying `03-site/dist` replaces any concept boards that were
+published to `ws-<slug>.pages.dev/concepts/a|b|c/` at the intake step (Command 9) — so the
+`/concepts/` routes naturally vanish at the first prototype publish. NEVER carry `/concepts/` into
+`03-site/public/`. The screenshots in `02-intake/concepts/` are the permanent record and stay.
 
 ### PUBLISH-ALWAYS (universal — replaces any per-trigger auto-publish)
 ANY completed change to a client's `03-site` — prototype assembly, edit processing, a spec phase,
@@ -207,9 +211,50 @@ no fabricated client facts:
    - **Scope summary**: archetype, playbook routed, binding specs found, phases anticipated.
 2. `deliverables-request.md` — generated HERE (moved out of Command 1) by the same filtering/
    specializing rules; §2.1/2.2 always BLOCKING; auditable "Omitted" list.
-Then OPEN a decision (the inbox): **"Choose the design concept for <slug>"** — the 2–3 concepts as
-options (one-line consequence each) + a recommendation. The chosen option is what Command 1 step 0
-records and builds.
+3. **CONCEPT BOARDS — three visual mockups, not documents.** For each named concept in the
+   redesign plan, build a single static HTML homepage IMPRESSION (hero + nav + 3–4 product cards +
+   one section band), each genuinely distinct in palette/type/layout per its concept, using the
+   client's REAL scraped images at their largest honest variants (type-led where photography is
+   weak, per the brand-moment rules) and evidence-derived brand colours. Each board is labelled
+   "CONCEPT BOARD — not the final build" + its name + one-liner, carries `<meta robots noindex>`,
+   and has no JS. Pipeline: write `02-intake/concepts/concepts.json` (structured: per board —
+   letter/id/name/recommended/palette/fonts/signature/layout/nav/hero/band/products[]; `images:[]`
+   ⇒ type-led), then run `python3 .claude/skills/site-baseline/scripts/concept_boards.py
+   clients/<slug>` (emits the board HTML under `02-intake/concepts/site/`, desktop+390px Playwright
+   screenshots to `02-intake/concepts/<letter>-<id>.png`, and the `boards.json` manifest). DEPLOY
+   the boards to the client's preview project so they live at `ws-<slug>.pages.dev/concepts/a|b|c/`
+   (`wrangler pages deploy 02-intake/concepts/site --project-name ws-<slug>`; create the project
+   first if it doesn't exist), then write the deployed base into `boards.json` `deploy_url`.
+Then OPEN the **VISUAL** concept decision (the inbox): **"Choose the design concept for <slug>"** —
+each option carries `board_url` (the live board) + `thumb` (its screenshot filename) so the
+dashboard renders the three screenshots as clickable thumbnails, plus a one-line consequence and a
+recommendation. The chosen option is what Command 1 step 0 records and builds. (Boards are
+disposable — see Command 1/6: the `/concepts/` routes drop at the next publish; the PNGs persist in
+`02-intake/concepts/` as the permanent record of what was offered and chosen.)
+
+## Command 10 — "Full build (<variant>) for <slug>" (one-click chained rehearsal build)
+The dashboard's **Full build** button triggers this as a headless `claude -p` job. TWO variants
+share ONE chain; the dashboard renders them mutually exclusively by stage and lays down the step
+artifact `02-intake/full-build-progress.json` before spawning. You DRIVE that file: read it first;
+for each step whose status isn't `done`, set it `active` (write the file), do the work, then set it
+`done` with a one-line note + UTC timestamp (write again). This makes the build **resumable**
+(re-running skips `done` steps) and streams live progress to the row.
+- **`from-scratch`** (at `baseline-ready`, no prototype): rehearsal mode → complete-coverage
+  re-scrape + full-catalog extraction → **assemble to the RECOMMENDED concept, auto-accepted** (if
+  the concept decision is still OPEN, resolve it to the recommended option and record that the full
+  build auto-accepted it — do NOT wait; boards are still generated/recorded) → propose + auto-bind
+  backend config (DRAFT→BINDING) → Phases 2–4 on TEST creds → publish.
+- **`from-prototype`** (at `prototype` and later): **PRESERVE the existing prototype EXACTLY** —
+  every processed edit, the chosen concept, all design decisions stand. Run only what's missing:
+  rehearsal mode → backend config (auto-bind if none BINDING; **if a BINDING config already exists,
+  USE it untouched** — never overwrite confirmed decisions) → Phases 2–4 → publish.
+Both: **precondition** — step `precond` confirms `02-intake/secrets/.env` has rehearsal TEST creds
+tagged `# REHEARSAL`; if missing, mark the step `blocked`, OPEN a decision, and STOP (the dashboard
+button is also disabled until they exist). Slug-typed confirm (enforced by `/api/full-build`).
+TEST MODE banners on every surface; **cutover stays refused** while any `# REHEARSAL` credential is
+in use (unchanged). On ANY fork needing the human's judgment, do NOT guess — open a decision with
+`resume_job` set (so resolving it resumes the build), leave the step `active`, and STOP. Every
+completed step still obeys PUBLISH-ALWAYS and the parity floor + Hard rules.
 
 ## Product correspondence (catalog builds) — binding
 Every field of a product entry — name, label, price, description, AND photo — is assembled
