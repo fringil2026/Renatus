@@ -30,6 +30,12 @@ HOST = os.environ.get("STUDIO_HOST", "127.0.0.1")
 PORT = int(os.environ.get("STUDIO_PORT", "8788"))
 MAX_SCRAPES = int(os.environ.get("MAX_SCRAPES", "3"))
 TOKEN = os.environ.get("STUDIO_TOKEN", "")
+# Environment: a Mac dev box opens a real Terminal via osascript; a Linux server
+# exposes a web terminal (ttyd) behind the same tunnel/Access. Set STUDIO_ENV=server
+# and STUDIO_TTYD_URL on the VPS (see deploy/).
+import platform
+IS_SERVER = os.environ.get("STUDIO_ENV", "").lower() == "server" or platform.system() != "Darwin"
+TTYD_URL = os.environ.get("STUDIO_TTYD_URL", "")
 if HOST not in ("127.0.0.1", "localhost") and not TOKEN:
     TOKEN = secrets.token_urlsafe(9)
     print(f"[studio] public bind without STUDIO_TOKEN — generated one: {TOKEN}")
@@ -224,6 +230,7 @@ async function load(){
   el.innerHTML = d.clients.map(c=>`<div class="row${c.done?' fin':''}">
     <div class="top"><div><span class="nm">${c.name}</span> <span class="dom">${c.domain}</span></div>
     <div class="btns"><span class="chip">${c.stage}</span>
+      ${d.server?(d.ttyd_url?`<a class="ghost" href="${d.ttyd_url}" target="_blank" rel="noopener">Open session ↗</a>`:''):`<button class="ghost" onclick="api('/open',{slug:'${c.slug}'})">Open session</button>`}
       ${c.rerun?`<button class="ghost" onclick="act('/rerun','${c.slug}')">Rerun</button>`:''}
       <button class="${c.done?'done':'ghost'}" onclick="if(confirm('Archive ${c.slug}? Moves it to archive/ and clears this row.'))act('/archive','${c.slug}')">Archive</button>
     </div></div>
@@ -276,7 +283,8 @@ class H(BaseHTTPRequestHandler):
             archived = len(list(ARCHIVE.iterdir())) if ARCHIVE.exists() else 0
             self._send(json.dumps({"clients": list_clients(), "running": running,
                                    "max": MAX_SCRAPES, "queued": queued,
-                                   "archived": archived}), "application/json")
+                                   "archived": archived, "server": IS_SERVER,
+                                   "ttyd_url": TTYD_URL}), "application/json")
         else:
             self._send("not found", code=404)
 
@@ -305,6 +313,16 @@ class H(BaseHTTPRequestHandler):
             cdir = CLIENTS / slug
             if cdir.exists():
                 submit(slug, read_status(cdir).get("domain", ""))
+        elif path == "/open":
+            # Local Mac only: open a Terminal at the project root running Claude Code.
+            # On the server the UI links to ttyd instead and never calls this.
+            if not IS_SERVER:
+                osa = (f'tell application "Terminal" to do script '
+                       f'"cd {ROOT} && claude"')
+                try:
+                    subprocess.Popen(["osascript", "-e", osa])
+                except Exception as e:
+                    return self._send(json.dumps({"error": str(e)}), "application/json", 500)
         else:
             return self._send("not found", code=404)
         self._send("{}", "application/json")
