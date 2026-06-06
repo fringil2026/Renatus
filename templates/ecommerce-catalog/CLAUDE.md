@@ -47,6 +47,10 @@ JSON-LD builders: `src/lib/schema.ts`. Client facts: `src/config/site.ts`. Token
 in `src/styles/global.css` (mirror `tokens.json`).
 
 ## Hard rules — never violate
+- ADMIN COMPLETENESS: an admin build is NOT done until it covers EVERY non-deferred field in
+  BACKEND.md §B and EVERY non-deferred block in §C — a partial admin UI is a BUILD FAILURE.
+  Apply the field-completeness rule (walk the owner's week). Deferring an item is allowed only
+  with a recorded reason; silently omitting one is not.
 - Imagery follows the studio rule: a PROTOTYPE may use images scraped from the client's OWN
   site; PRODUCTION ("Finish") requires every image client-supplied or provenance-confirmed,
   else FOR REVIEW + replaced. Never use third-party/stock imagery. `SpecimenPhoto` shows the
