@@ -114,6 +114,18 @@ baseline if blank — record the inference). If a match exists, read it and appl
 content drafting, schema, section choices, and tone. If none exists, say so explicitly,
 proceed with general defaults, and suggest creating one from playbooks/_TEMPLATE.md.
 
+## Command composition (work with the allowlist, not around it)
+Bash permissions in `.claude/settings.local.json` match command PREFIXES, and a compound
+command (`a && b`, `a; b`) is matched as a whole — so a chain can slip a denied command past
+a deny rule, and a `cd`-prefixed chain matches none of the allow patterns. Therefore:
+- Run from the project root and address other dirs with tool-native flags, not `cd`:
+  `git -C /Users/ericliu/web-studio <sub>`, `npm run build --prefix <dir>`, absolute paths for
+  `cp`/`python3 .claude/skills/...`. This keeps every command cwd-independent.
+- Prefer SEPARATE simple commands over `&&`/`;` chains (run independent ones in parallel tool
+  calls). Never glue a step onto an `echo`/`cd` just to dodge a pattern.
+- Never reshape a command to evade a deny rule. If a command you genuinely need has no allow
+  rule, say so and propose adding the rule — don't work around it.
+
 ## Auto-approval audit
 At the END of every task, read the `.claude/audit/session.log` entries written since the
 task began and emit a mini report: the total count of auto-approved actions, grouped (file
