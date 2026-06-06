@@ -846,7 +846,7 @@ async function resolveDec(scope,file,choice){
 function md2html(src){
   const ec=s=>s.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
   const inl=s=>ec(s).replace(/`([^`]+)`/g,'<code>$1</code>').replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>').replace(/\[([^\]]+)\]\(([^)]+)\)/g,'<a href="$2" target="_blank" rel="noopener">$1</a>');
-  const L=src.split('\n'); let h=''; let i=0;
+  const L=src.split('\\n'); let h=''; let i=0;
   while(i<L.length){ let l=L[i];
     let m=l.match(/^\s*(#{1,3})\s+(.*)/); if(m){ h+=`<h${m[1].length}>${inl(m[2])}</h${m[1].length}>`; i++; continue; }
     if(/^\s*---\s*$/.test(l)){ h+='<hr>'; i++; continue; }
