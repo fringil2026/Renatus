@@ -215,13 +215,18 @@ def advance_action(slug, st):
     if stage == "baseline-ready":
         return mk(f"Assemble prototype for {slug}", f"Assemble prototype for {slug}",
                   desc="Reads the baseline, copies the archetype into 03-site, drafts content, builds, and publishes the preview.")
-    if stage == "prototype":   # P1 done; next is P2, gated on its BLOCKING deliverables
+    if stage == "prototype":   # P1 done; next is P2 — gated on BLOCKING deliverables AND a BINDING backend-config
         rel, unmet = phase_gate(CLIENTS / slug, 2)
-        cmd = f"Implement Phase 2 of the spec in clients/{slug}/02-intake/specs/"
+        cfg = parse_backend_config(CLIENTS / slug)
+        cmd = f"Implement Phase 2 of the spec in clients/{slug}/02-intake/specs/ per its BINDING backend-config"
+        blockers = []
         if unmet:
-            return mk("Implement Phase 2 (blocked)", cmd, enabled=False,
-                      tooltip="Unmet BLOCKING deliverables: " + "; ".join(f"{u['what']} ({u['id']})" for u in unmet))
-        return mk("Implement Phase 2", cmd, desc="Builds the next spec phase; then verifies and publishes.")
+            blockers.append("BLOCKING deliverables: " + "; ".join(f"{u['what']} ({u['id']})" for u in unmet))
+        if not (cfg and cfg.get("status") == "BINDING"):
+            blockers.append("no BINDING backend-config — use Configure backend")
+        if blockers:
+            return mk("Implement Phase 2 (blocked)", cmd, enabled=False, tooltip=" · ".join(blockers))
+        return mk("Implement Phase 2", cmd, desc="Builds Phase 2 per the binding backend-config; then verifies and publishes.")
     if stage == "answers-received":
         return mk(f"Finish {slug}", f"Finish {slug}",
                   desc="Applies the owner's answers, replaces DRAFT content, finalizes, builds, and publishes.")
@@ -230,21 +235,21 @@ def advance_action(slug, st):
                   desc="Runs the launch checks and writes reports into 04-cutover/.")
     return None  # queued/scraping/created/error/awaiting-owner(no real action)/cutover-checked
 
-def run_advance(slug, command):
-    """Run `claude -p <command>` from ROOT in the background. Start/finish lines go to status.json
-    (written only when the claude subprocess is NOT running, to avoid clobbering the file it owns);
-    live snippets stream into the in-memory task tail shown on the dashboard."""
+def run_advance(slug, command, kind="advance", fail_flag="advance_failed"):
+    """Run `claude -p <command>` from ROOT in the background (used by Advance + backend proposal).
+    Start/finish lines go to status.json only when the claude subprocess is NOT running (avoids
+    clobbering the file it owns); live snippets stream into the in-memory task tail on the row."""
     cdir = CLIENTS / slug
-    bump(cdir, msg=f'advance started: claude -p "{command}"')   # safe: before spawn
+    bump(cdir, msg=f'{kind} started: claude -p "{command}"')   # safe: before spawn
     try:
         proc = subprocess.Popen([CLAUDE_BIN, "-p", command], cwd=str(ROOT),
                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     except Exception as e:
-        bump(cdir, msg=f"advance FAILED to start: {e}")
+        bump(cdir, msg=f"{kind} FAILED to start: {e}")
         with TASK_LOCK: TASKS.pop(slug, None)
         return
     with TASK_LOCK:
-        TASKS[slug] = {"kind": "advance", "label": command, "started": now(), "tail": [], "proc": proc}
+        TASKS[slug] = {"kind": kind, "label": command, "started": now(), "tail": [], "proc": proc}
     tail = TASKS[slug]["tail"]
     for line in proc.stdout:
         line = line.rstrip()
@@ -253,13 +258,56 @@ def run_advance(slug, command):
             del tail[:-60]
     rc = proc.wait()
     if rc == 0:
-        bump(cdir, msg="advance finished ok")          # safe: claude has exited
+        bump(cdir, msg=f"{kind} finished ok")          # safe: claude has exited
     else:
         st = read_status(cdir)
-        st["advance_failed"] = True
-        st.setdefault("log", []).append(f"{now()} advance FAILED (exit {rc}) — tail: " + " / ".join(tail[-5:])[:400])
+        if fail_flag: st[fail_flag] = True
+        st.setdefault("log", []).append(f"{now()} {kind} FAILED (exit {rc}) — tail: " + " / ".join(tail[-5:])[:400])
         write_status(cdir, st)
     with TASK_LOCK: TASKS.pop(slug, None)
+
+def has_binding_spec(cdir):
+    specs = cdir / "02-intake" / "specs"
+    if not specs.exists(): return False
+    for f in specs.glob("*.md"):
+        head = f.read_text()[:600]
+        if re.search(r"^\s*status:\s*BINDING", head, re.M) and "spec-id:" in head:
+            return True
+    return False
+
+def parse_backend_config(cdir):
+    """Minimal parser for the controlled 02-intake/backend-config.yaml we generate. Returns
+    {config_id, version, status, modules:[{key,tier,on,reason}]} or None."""
+    f = cdir / "02-intake" / "backend-config.yaml"
+    if not f.exists(): return None
+    cfg = {"config_id": "", "version": "", "status": "", "modules": []}
+    cur = None
+    for ln in f.read_text().splitlines():
+        s = ln.strip()
+        m = re.match(r"^(config-id|version|status|client|generated):\s*(.+)$", s)
+        if m and not ln.startswith(" " * 2 + "-") and cur is None and not s.startswith("- "):
+            k = m.group(1); v = m.group(2).strip().strip('"')
+            if k == "config-id": cfg["config_id"] = v
+            elif k in ("version", "status"): cfg[k] = v
+            continue
+        if s.startswith("- key:"):
+            cur = {"key": s.split("key:", 1)[1].strip().strip('"'), "tier": "", "on": True, "reason": ""}
+            cfg["modules"].append(cur)
+        elif cur is not None and s.startswith("tier:"):
+            cur["tier"] = s.split("tier:", 1)[1].strip().strip('"')
+        elif cur is not None and s.startswith("on:"):
+            cur["on"] = s.split("on:", 1)[1].strip().lower() in ("true", "yes", "on")
+        elif cur is not None and s.startswith("reason:"):
+            cur["reason"] = s.split("reason:", 1)[1].strip().strip('"')
+    return cfg
+
+def write_backend_config(cdir, cfg):
+    L = [f'config-id: {cfg["config_id"]}', f'version: {cfg["version"]}',
+         f'status: {cfg["status"]}', f'client: {cdir.name}', f'generated: {now()}', "modules:"]
+    for m in cfg["modules"]:
+        L += [f'  - key: {m["key"]}', f'    tier: {m["tier"]}',
+              f'    on: {"true" if m["on"] else "false"}', f'    reason: "{m["reason"]}"']
+    (cdir / "02-intake" / "backend-config.yaml").write_text("\n".join(L) + "\n")
 
 def chat_paths(key):
     """(transcript jsonl, session-id file) for a chat key (slug, or STUDIO_KEY)."""
@@ -356,6 +404,8 @@ def list_clients():
                     "preview_behind": bool(st.get("preview_url")) and site_newer_than(d, st.get("preview_published_at", "")),
                     "advance_failed": st.get("advance_failed", False),
                     "advance": advance_action(d.name, st),
+                    "can_configure": st.get("stage") == "prototype" and has_binding_spec(d),
+                    "backend_cfg": (lambda c: {"status": c["status"], "version": c["version"]} if c else None)(parse_backend_config(d)),
                     "busy": d.name in TASKS,
                     "task_tail": TASKS.get(d.name, {}).get("tail", [])[-6:] if d.name in TASKS else [],
                     "log": st.get("log", [])[-4:]})
@@ -435,6 +485,11 @@ padding:.5rem .7rem;margin-top:.5rem;white-space:pre-wrap;max-height:9rem;overfl
 .chatform{display:flex;gap:.5rem}.chatform textarea{flex:1;min-height:3.2rem}
 .chatform button{align-self:flex-end}
 .chatrun{font-family:var(--m);font-size:.62rem;color:#7fd18f;margin-bottom:.4rem}
+.cfgbox{max-width:42rem;max-height:84vh;overflow:auto}
+.tiergrp{margin:.8rem 0}.tiergrp h4{font-family:var(--m);font-size:.66rem;letter-spacing:.14em;text-transform:uppercase;color:var(--amber);margin:.4rem 0}
+.citem{display:flex;gap:.5rem;align-items:flex-start;font-size:.78rem;padding:.3rem 0;border-bottom:1px solid var(--line)}
+.citem .lk{color:#7fd18f}.citem .rsn{color:var(--muted);font-family:var(--m);font-size:.66rem}
+.cfgdef summary{cursor:pointer;color:var(--muted);font-family:var(--m);font-size:.72rem}
 </style></head><body><div class="wrap">
 <h1>Web Studio</h1><p class="sub">Two human steps · everything else automated</p>
 <p class="stats" id="stats"></p>
@@ -464,6 +519,14 @@ padding:.5rem .7rem;margin-top:.5rem;white-space:pre-wrap;max-height:9rem;overfl
   <input id="m-input" placeholder="slug" autocomplete="off">
   <div class="m-btns"><button id="m-run">Run</button><button class="ghost" onclick="closeModal()">Cancel</button></div>
 </div></div>
+<div id="cfgmodal" class="modal" style="display:none"><div class="modalbox cfgbox">
+  <h3 id="cfg-title"></h3>
+  <p class="m-desc">REQUIRED + EVIDENCED are locked on (never less than your evidence). Toggle only the JUDGMENT items; DEFERRED are opt-in.</p>
+  <div id="cfg-body"></div>
+  <label class="m-lab">Type the client slug to make this config BINDING: <b id="cfg-slug"></b></label>
+  <input id="cfg-input" placeholder="slug" autocomplete="off">
+  <div class="m-btns"><button id="cfg-run">Confirm → BINDING</button><button class="ghost" onclick="document.getElementById('cfgmodal').style.display='none'">Cancel</button></div>
+</div></div>
 <script>
 async function api(path, body){
   const r = await fetch(path, body ? {method:'POST',headers:{'Content-Type':'application/json'},
@@ -490,6 +553,35 @@ async function renderChat(key){
     + r.messages.map(m=>`<div class="msg ${m.role}"><span class="who">${m.role}</span>${esc(m.text)}`
       +((m.tools&&m.tools.length)?`<div class="tools">↳ ${m.tools.map(esc).join('<br>↳ ')}</div>`:'')+`</div>`).join('');
   log.scrollTop=log.scrollHeight;
+}
+async function configBackend(slug){
+  const c=findC(slug);
+  if(!c.backend_cfg){ const r=await api('/api/backend-config/propose',{slug});
+    if(r.error) alert(r.error); else { alert('Proposing backend config — watch the row log; the panel opens once the draft lands.'); load(); } return; }
+  openCfg(slug);
+}
+async function openCfg(slug){
+  const r=await api('/api/backend-config?slug='+encodeURIComponent(slug));
+  if(!r.config){ alert('No config yet — still proposing?'); return; }
+  const cfg=r.config, groups={REQUIRED:[],EVIDENCED:[],JUDGMENT:[],DEFERRED:[]};
+  cfg.modules.forEach(m=>(groups[m.tier]||(groups.JUDGMENT)).push(m));
+  const locked=(m)=>`<div class="citem"><span class="lk">🔒 on</span><div><b>${esc(m.key)}</b> <span class="rsn">${esc(m.reason)}</span></div></div>`;
+  const toggle=(m)=>`<div class="citem"><input type="checkbox" data-ck="${esc(m.key)}" ${m.on?'checked':''}><div><b>${esc(m.key)}</b> <span class="rsn">${esc(m.reason)}</span></div></div>`;
+  let html='';
+  if(groups.REQUIRED.length) html+=`<div class="tiergrp"><h4>Required — locked on</h4>${groups.REQUIRED.map(locked).join('')}</div>`;
+  if(groups.EVIDENCED.length) html+=`<div class="tiergrp"><h4>Evidenced — locked on</h4>${groups.EVIDENCED.map(locked).join('')}</div>`;
+  if(groups.JUDGMENT.length) html+=`<div class="tiergrp"><h4>Judgment — your call</h4>${groups.JUDGMENT.map(toggle).join('')}</div>`;
+  if(groups.DEFERRED.length) html+=`<div class="tiergrp"><details class="cfgdef"><summary>Deferred — opt in (${groups.DEFERRED.length})</summary>${groups.DEFERRED.map(toggle).join('')}</details></div>`;
+  document.getElementById('cfg-title').textContent='Backend config — '+slug+' ('+cfg.status+' v'+cfg.version+')';
+  document.getElementById('cfg-body').innerHTML=html;
+  document.getElementById('cfg-slug').textContent=slug;
+  const inp=document.getElementById('cfg-input'); inp.value='';
+  document.getElementById('cfg-run').onclick=async()=>{
+    const overrides={}; document.querySelectorAll('#cfg-body input[data-ck]').forEach(x=>overrides[x.dataset.ck]=x.checked);
+    const rr=await api('/api/backend-config/confirm',{slug,confirm:inp.value.trim(),overrides});
+    if(rr.error) alert('Cannot confirm: '+rr.error); else { document.getElementById('cfgmodal').style.display='none'; load(); }
+  };
+  document.getElementById('cfgmodal').style.display='flex'; inp.focus();
 }
 async function sendChat(e,key){ e.preventDefault();
   const t=document.getElementById('cin-'+key); const msg=t.value.trim(); if(!msg) return false;
@@ -524,6 +616,7 @@ async function load(){
     <div class="btns"><span class="chip">${c.stage}</span>
       ${c.busy?'<span class="run">● running…</span>':''}
       ${c.advance?`<button class="adv" ${c.advance.enabled?'':'disabled'} title="${(c.advance.tooltip||c.advance.desc||'').replace(/"/g,'&quot;')}" onclick="openAdvance('${c.slug}')">${c.advance.label}</button><span class="copy" title="Copy terminal command" onclick="cpCmd('${c.slug}')">⧉</span>`:''}
+      ${c.can_configure?`<button class="ghost" onclick="configBackend('${c.slug}')">Configure backend${c.backend_cfg?` · ${c.backend_cfg.status} v${c.backend_cfg.version}`:''}</button>`:''}
       ${d.server?(d.ttyd_url?`<a class="ghost" href="${d.ttyd_url}" target="_blank" rel="noopener">Open session ↗</a>`:''):`<button class="ghost" onclick="api('/open',{slug:'${c.slug}'})">Claude: ${c.name}</button>`}
       ${c.rerun?`<button class="ghost" onclick="act('/rerun','${c.slug}')">Rerun</button>`:''}
       <button class="${c.done?'done':'ghost'}" onclick="if(confirm('Archive ${c.slug}? Moves it to archive/ and clears this row.'))act('/archive','${c.slug}')">Archive</button>
@@ -612,6 +705,10 @@ class H(BaseHTTPRequestHandler):
             key = STUDIO_KEY if slug in ("", "studio") else slugify(slug)
             self._send(json.dumps({"messages": read_chat(key), "running": key in TASKS}),
                        "application/json")
+        elif path == "/api/backend-config":
+            slug = slugify(parse_qs(urlparse(self.path).query).get("slug", [""])[0])
+            self._send(json.dumps({"config": parse_backend_config(CLIENTS / slug),
+                                   "running": slug in TASKS}), "application/json")
         else:
             self._send("not found", code=404)
 
@@ -681,6 +778,44 @@ class H(BaseHTTPRequestHandler):
             append_chat(key, {"role": "user", "text": msg, "at": now()})
             threading.Thread(target=run_chat, args=(key, msg), daemon=True).start()
             return self._send(json.dumps({"ok": True}), "application/json")
+        elif path == "/api/backend-config/propose":
+            slug = slugify(d.get("slug", ""))
+            cdir = CLIENTS / slug
+            if not cdir.exists():
+                return self._send(json.dumps({"error": "no such client"}), "application/json", 404)
+            if not has_binding_spec(cdir):
+                return self._send(json.dumps({"error": "needs a BINDING spec first"}), "application/json", 400)
+            if parse_backend_config(cdir):
+                return self._send(json.dumps({"ok": True, "note": "config already exists"}), "application/json")
+            with TASK_LOCK:
+                if slug in TASKS:
+                    return self._send(json.dumps({"error": "a Claude task is already running for this client"}), "application/json", 409)
+                TASKS[slug] = {"kind": "backend proposal", "label": "propose backend config", "started": now(), "tail": [], "proc": None}
+            threading.Thread(target=run_advance,
+                             args=(slug, f"Propose backend config for {slug}", "backend proposal", None),
+                             daemon=True).start()
+            return self._send(json.dumps({"ok": True}), "application/json")
+        elif path == "/api/backend-config/confirm":
+            slug = slugify(d.get("slug", ""))
+            cdir = CLIENTS / slug
+            cfg = parse_backend_config(cdir)
+            if not cfg:
+                return self._send(json.dumps({"error": "no draft config to confirm"}), "application/json", 404)
+            if d.get("confirm", "") != slug:
+                return self._send(json.dumps({"error": "type the slug exactly to confirm"}), "application/json", 400)
+            overrides = d.get("overrides", {}) or {}   # {key: bool} for JUDGMENT/DEFERRED only
+            for m in cfg["modules"]:
+                if m["tier"] in ("REQUIRED", "EVIDENCED"):
+                    m["on"] = True                       # safety/evidence never toggled off
+                elif m["key"] in overrides:
+                    m["on"] = bool(overrides[m["key"]])
+            try: cfg["version"] = str(int(cfg.get("version") or "0") + 1)
+            except ValueError: cfg["version"] = "1"
+            cfg["status"] = "BINDING"
+            write_backend_config(cdir, cfg)
+            on = sum(1 for m in cfg["modules"] if m["on"])
+            bump(cdir, msg=f"backend-config CONFIRMED -> BINDING v{cfg['version']} ({on}/{len(cfg['modules'])} modules ON)")
+            return self._send(json.dumps({"ok": True, "version": cfg["version"]}), "application/json")
         elif path == "/archive":
             archive_client(slugify(d.get("slug", "")))
         elif path == "/rerun":
