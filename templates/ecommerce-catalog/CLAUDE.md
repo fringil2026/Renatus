@@ -64,3 +64,27 @@ in `src/styles/global.css` (mirror `tokens.json`).
 ONLY accent. Type: Cormorant Garamond (display, italic for Latin binomials) · Public Sans
 (body) · IBM Plex Mono (labels/SKU/origin). Microdetails: thin botanical rules, plate
 numbers ("Pl. 12"), hover lifts a card 2px. No parallax — neat and precise.
+
+## Brand-moment design ambition — binding for every client built from THIS archetype
+Commerce is a feeling before it is a transaction. Every client built from ecommerce-catalog MUST
+deliver a memorable BRAND MOMENT — a beat a visitor would remember tomorrow. This raises the bar
+above the studio's global Design Ground Rules and applies to commerce builds ONLY (other archetypes
+keep their own character). The toolkit:
+- **Arresting, type-led opening.** Oversized display typography used as artwork. This is the HONEST
+  default when client photography is below the hero minimum (hero ≥1600px) — let the words carry
+  the opening rather than stretching a small photo.
+- **Editorial, asymmetric catalog rhythm.** Vary scale and placement; imagery prominence is EARNED
+  by resolution — only high-res photos get the big slots; low-res/no-photo items take smaller,
+  type-forward cards rather than being blown up.
+- **Full-bleed color interlude bands** between sections to pace the page and reset the eye.
+- **Staggered reveals and refined hover states** — always gated by `prefers-reduced-motion`.
+- **ONE signature micro-interaction per client** — a single deliberate motion/feedback flourish
+  that becomes the site's tell. Not a motion circus; exactly one.
+
+**Concept placement (extends the studio ground rules):** each commerce client's named concept must
+state WHERE its brand moment LIVES — the opening, the catalog, or the product page — so the moment
+is intentional, not incidental.
+
+**Design QA Gate for commerce builds (extends, doesn't replace, the global gate):** the audit must
+explicitly confirm the brand moment EXISTS and LANDS — name it, name where it lives, and answer
+honestly whether it's memorable. A commerce build with no brand moment fails the gate.
