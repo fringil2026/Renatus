@@ -4,6 +4,7 @@ archive/
 node_modules/
 dist/
 .astro/
+.wrangler/
 __pycache__/
 *.pyc
 .venv/
