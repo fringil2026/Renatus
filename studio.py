@@ -689,13 +689,22 @@ class H(BaseHTTPRequestHandler):
             if cdir.exists():
                 submit(slug, read_status(cdir).get("domain", ""))
         elif path == "/open":
-            # Local Mac only: open a Terminal at the project root running Claude Code.
-            # On the server the UI links to ttyd instead and never calls this.
+            # macOS-local until cloud migration: open a Terminal running Claude Code from ROOT.
+            # Studio = unscoped; per-client = a scoped briefing prompt. (On a server the UI links
+            # to ttyd instead and never calls this.)
             if not IS_SERVER:
-                osa = (f'tell application "Terminal" to do script '
-                       f'"cd {ROOT} && claude"')
+                if d.get("studio") or not d.get("slug"):
+                    inner = f"cd {ROOT} && claude"
+                else:
+                    slug = slugify(d.get("slug", ""))
+                    prompt = (f"Working on client {slug} — stay within clients/{slug}/ unless I say "
+                              f"otherwise. Summarize its stage, pending edits, and BLOCKING "
+                              f"deliverables, then await instruction.")
+                    inner = f"cd {ROOT} && claude '{prompt}'"
+                osa = f'tell application "Terminal" to do script "{inner}"'
                 try:
-                    subprocess.Popen(["osascript", "-e", osa])
+                    subprocess.Popen(["osascript", "-e", osa, "-e",
+                                      'tell application "Terminal" to activate'])
                 except Exception as e:
                     return self._send(json.dumps({"error": str(e)}), "application/json", 500)
         else:
