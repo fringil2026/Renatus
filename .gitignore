@@ -1,0 +1,11 @@
+clients/*
+!clients/.gitkeep
+archive/
+node_modules/
+dist/
+.astro/
+__pycache__/
+*.pyc
+.venv/
+.DS_Store
+*.log
