@@ -41,7 +41,7 @@ if HOST not in ("127.0.0.1", "localhost") and not TOKEN:
     print(f"[studio] public bind without STUDIO_TOKEN — generated one: {TOKEN}")
 
 SUBDIRS = ["00-source", "01-baseline", "02-intake/assets", "02-intake/specs",
-           "02-intake/edits", "03-site", "04-cutover"]
+           "02-intake/edits", "02-intake/secrets", "03-site", "04-cutover"]
 LOCK = threading.Lock()
 RUNNING = {}   # slug -> Popen   (scrape jobs)
 QUEUE = []     # [(slug, domain)]
@@ -218,15 +218,19 @@ def advance_action(slug, st):
     if stage == "prototype":   # P1 done; next is P2 — gated on BLOCKING deliverables AND a BINDING backend-config
         rel, unmet = phase_gate(CLIENTS / slug, 2)
         cfg = parse_backend_config(CLIENTS / slug)
+        rehearsal = bool(cfg and cfg.get("mode") == "rehearsal")
         cmd = f"Implement Phase 2 of the spec in clients/{slug}/02-intake/specs/ per its BINDING backend-config"
         blockers = []
-        if unmet:
+        if unmet and not rehearsal:   # rehearsal satisfies deliverables via studio test resources
             blockers.append("BLOCKING deliverables: " + "; ".join(f"{u['what']} ({u['id']})" for u in unmet))
         if not (cfg and cfg.get("status") == "BINDING"):
             blockers.append("no BINDING backend-config — use Configure backend")
+        badge = "REHEARSAL" if rehearsal else ""
         if blockers:
-            return mk("Implement Phase 2 (blocked)", cmd, enabled=False, tooltip=" · ".join(blockers))
-        return mk("Implement Phase 2", cmd, desc="Builds Phase 2 per the binding backend-config; then verifies and publishes.")
+            return {**mk("Implement Phase 2 (blocked)", cmd, enabled=False, tooltip=" · ".join(blockers)), "badge": badge}
+        return {**mk("Implement Phase 2", cmd,
+                     desc=("REHEARSAL — builds Phase 2 against studio test resources (Supabase/Stripe-test/Resend-test); every surface shows TEST MODE." if rehearsal
+                           else "Builds Phase 2 per the binding backend-config; then verifies and publishes.")), "badge": badge}
     if stage == "answers-received":
         return mk(f"Finish {slug}", f"Finish {slug}",
                   desc="Applies the owner's answers, replaces DRAFT content, finalizes, builds, and publishes.")
@@ -280,15 +284,15 @@ def parse_backend_config(cdir):
     {config_id, version, status, modules:[{key,tier,on,reason}]} or None."""
     f = cdir / "02-intake" / "backend-config.yaml"
     if not f.exists(): return None
-    cfg = {"config_id": "", "version": "", "status": "", "modules": []}
+    cfg = {"config_id": "", "version": "", "status": "", "mode": "", "modules": []}
     cur = None
     for ln in f.read_text().splitlines():
         s = ln.strip()
-        m = re.match(r"^(config-id|version|status|client|generated):\s*(.+)$", s)
+        m = re.match(r"^(config-id|version|status|mode|client|generated):\s*(.+)$", s)
         if m and not ln.startswith(" " * 2 + "-") and cur is None and not s.startswith("- "):
             k = m.group(1); v = m.group(2).strip().strip('"')
             if k == "config-id": cfg["config_id"] = v
-            elif k in ("version", "status"): cfg[k] = v
+            elif k in ("version", "status", "mode"): cfg[k] = v
             continue
         if s.startswith("- key:"):
             cur = {"key": s.split("key:", 1)[1].strip().strip('"'), "tier": "", "on": True, "reason": ""}
@@ -465,6 +469,7 @@ button.adv{background:transparent;color:var(--amber);border-color:var(--amber2);
 button.adv:hover:not([disabled]){background:var(--amber);color:var(--ink)}
 button.adv[disabled]{color:var(--muted);border-color:var(--line);cursor:not-allowed;opacity:.6}
 .run{font-family:var(--m);font-size:.66rem;color:#7fd18f}
+.rehbadge{font-family:var(--m);font-size:.56rem;letter-spacing:.12em;background:#7a4dff;color:#fff;padding:.15em .5em;border-radius:2px}
 .tasktail{font-family:var(--m);font-size:.62rem;color:#7fd18f;background:#0a1a10;border-left:3px solid #3a6b4f;
 padding:.5rem .7rem;margin-top:.5rem;white-space:pre-wrap;max-height:9rem;overflow:auto}
 .modal{position:fixed;inset:0;background:rgba(4,9,14,.78);display:flex;align-items:center;justify-content:center;z-index:50}
@@ -615,7 +620,7 @@ async function load(){
     <div class="top"><div><span class="nm">${c.name}</span> <span class="dom">${c.domain}</span></div>
     <div class="btns"><span class="chip">${c.stage}</span>
       ${c.busy?'<span class="run">● running…</span>':''}
-      ${c.advance?`<button class="adv" ${c.advance.enabled?'':'disabled'} title="${(c.advance.tooltip||c.advance.desc||'').replace(/"/g,'&quot;')}" onclick="openAdvance('${c.slug}')">${c.advance.label}</button><span class="copy" title="Copy terminal command" onclick="cpCmd('${c.slug}')">⧉</span>`:''}
+      ${c.advance?`<button class="adv" ${c.advance.enabled?'':'disabled'} title="${(c.advance.tooltip||c.advance.desc||'').replace(/"/g,'&quot;')}" onclick="openAdvance('${c.slug}')">${c.advance.label}</button>${c.advance.badge?`<span class="rehbadge">${c.advance.badge}</span>`:''}<span class="copy" title="Copy terminal command" onclick="cpCmd('${c.slug}')">⧉</span>`:''}
       ${c.can_configure?`<button class="ghost" onclick="configBackend('${c.slug}')">Configure backend${c.backend_cfg?` · ${c.backend_cfg.status} v${c.backend_cfg.version}`:''}</button>`:''}
       ${d.server?(d.ttyd_url?`<a class="ghost" href="${d.ttyd_url}" target="_blank" rel="noopener">Open session ↗</a>`:''):`<button class="ghost" onclick="api('/open',{slug:'${c.slug}'})">Claude: ${c.name}</button>`}
       ${c.rerun?`<button class="ghost" onclick="act('/rerun','${c.slug}')">Rerun</button>`:''}

@@ -124,3 +124,23 @@ Each item notes the deliverables §2.7 fact that unblocks it, or marks itself `(
 When building ANY admin form, enumerate every field the OWNER would expect from running their
 business for a week. If a thing can **sell out, go on sale, pause, or need an apology banner, it
 has a field.** A form that can't express a normal week of the business is incomplete.
+
+## Rehearsal mode & the swap checklist
+With `mode: rehearsal` in `backend-config.yaml`, Phases 2–4 build against STUDIO TEST RESOURCES so
+the capability is proven before a real client depends on it:
+- **Supabase:** a studio-owned project (e.g. `ws-rehearsal`).
+- **Stripe:** TEST-MODE keys only; test card `4242 4242 4242 4242`. Never request live keys for rehearsal.
+- **Resend:** the onboarding/test domain (sends only to the builder's own inbox — enough to prove the loop).
+Credentials live in `clients/<slug>/02-intake/secrets/.env`, each line tagged `# REHEARSAL`.
+Every rehearsal surface shows a **TEST MODE** banner. Schema, RLS, code, and content are the SAME
+as production — only the backing accounts differ.
+
+**Swap checklist — rehearsal → a real client's production (the un-rehearsal step):**
+1. Replace 4 env vars in `secrets/.env` with the client's real values (drop the `# REHEARSAL` tags):
+   `SUPABASE_URL` + `SUPABASE_SERVICE_KEY` (their project), `STRIPE_SECRET_KEY` (their LIVE key),
+   `RESEND_API_KEY` (their account).
+2. Point the **Stripe webhook endpoint** at the production URL and store its new signing secret.
+3. Set the **Resend domain** to the client's verified domain (D-2.7.3); reply-to = their inbox.
+4. Remove `mode: rehearsal` from `backend-config.yaml`; the TEST banners disappear automatically.
+**Unchanged by the swap:** database schema, RLS policies, all application code, all content/products.
+Cutover refuses to run until every `# REHEARSAL` tag is gone (CLAUDE.md guarantee c).

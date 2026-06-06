@@ -153,6 +153,23 @@ reason; DEFERRED are off unless requested. The file carries a signature block �
 changes require a NEW version, never silent edits. (The dashboard can enqueue this headlessly and
 flip DRAFT→BINDING on slug-typed confirm — see studio.py "Configure backend".)
 
+## Rehearsal mode (prove Phases 2–4 before a real client depends on them)
+A client may carry `mode: rehearsal` in `02-intake/backend-config.yaml`. In rehearsal mode the
+Phase 2–4 DELIVERABLES gating is satisfied by STUDIO TEST RESOURCES instead of client facts:
+a studio-owned Supabase project, Stripe **TEST-MODE** keys, and Resend's onboarding/test domain.
+Client FACTS are never faked — dummy catalogue/content is loudly labelled, never invented client truth.
+
+Hard guarantees:
+- **(a)** Every rehearsal surface shows a visible **TEST MODE** banner — admin header AND checkout.
+- **(b)** Rehearsal credentials live in `clients/<slug>/02-intake/secrets/.env` (git-ignored) and
+  each is tagged `# REHEARSAL`. Never commit secrets.
+- **(c)** "Finish" / cutover REFUSES to run while ANY `REHEARSAL`-tagged credential is in use.
+  Un-rehearsal is the explicit, human step: swap to the client's real accounts per the swap
+  checklist in `templates/ecommerce-catalog/BACKEND.md` (changes: 4 env vars + Stripe webhook
+  endpoint + Resend domain; unchanged: schema, code, content).
+- Dashboard: Advance/Phase buttons HONOR rehearsal — enabled with a visible **REHEARSAL** badge
+  instead of blocked-on-deliverables. The config still has to be BINDING (the build order stands).
+
 ## Product correspondence (catalog builds) — binding
 Every field of a product entry — name, label, price, description, AND photo — is assembled
 ONLY from that product's OWN source page. In `crawl.json` each page carries its own `images[]`;
