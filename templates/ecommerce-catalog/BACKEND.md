@@ -5,6 +5,11 @@ ecommerce-catalog archetype. Phases 2–4 implement this; a client's binding spe
 Item-integrity by construction: one record per thing, every surface reads it. No page builder —
 owners edit FACTS and CONTENT, never layout/spacing/color/font.
 
+> **Consolidated reference:** `ECOMMERCE-GUIDELINES.md` is the single end-to-end commerce build
+> standard; its §8 SUMMARIZES this file and defers to BACKEND.md on backend specifics ("that file
+> governs"). Read the guidelines for the whole picture; this file remains authoritative for WHAT
+> the backend builds.
+
 ## Necessity tiers (every item below is tagged)
 - **[REQUIRED]** — always built, never toggleable. Safety rails are not a customer choice.
 - **[EVIDENCED]** — built automatically when the feature census, binding spec, or playbook shows

@@ -9,6 +9,17 @@ catalog in the **"Living Herbarium"** design system. First instantiated for Andy
 NEVER customize this master for a client. Per client: `cp -R templates/ecommerce-catalog
 clients/<slug>/03-site`, then customize the copy.
 
+## Required reading — every commerce build (binding, not background)
+Before assembling or finishing ANY client from this archetype, read these in order:
+1. **`BACKEND.md`** — the Phases 2–4 backend baseline (WHAT gets built).
+2. **`INTEGRATIONS.md`** — the integrations registry (what it connects to; env vars; swap notes).
+3. **`ECOMMERCE-GUIDELINES.md`** — the **consolidated commerce build standard**: the single place
+   the whole picture (hard rules, pipeline order, design doctrine, QA gates) is readable end to
+   end. Where it overlaps the two docs above, each of those remains authoritative for its own
+   domain; the guidelines are the **consolidated reference**, not a competing source of truth.
+   Conflicts resolve: studio Hard Rules → binding client spec → BINDING backend-config →
+   the guidelines → archetype defaults.
+
 ## Build status — phased per the spec
 - **Phase 1 (DONE): static catalog.** Catalog, product, and Conservatory pages render
   from `src/data/products.json`; full Product + Breadcrumb + Store JSON-LD. Fully static,
