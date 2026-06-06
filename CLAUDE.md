@@ -48,6 +48,15 @@ The human normally archives via the dashboard button; if asked: verify stage is 
 cutover-checked (warn otherwise), then move clients/<slug>/ to archive/<slug>-<YYYYmmdd-HHMMSS>/.
 Never delete client folders; archive is the only removal path.
 
+## Build specs (binding build orders)
+Any `.md` file in a client's `02-intake/specs/` is a BINDING build order, not a
+suggestion. When assembling a prototype or finishing a client, read every spec in
+`02-intake/specs/` first and treat its instructions as authoritative — they override
+general defaults, archetype conventions, and playbook guidance where they conflict.
+Specs never override the Hard rules below (e.g. never fabricate facts, never edit
+templates/ in place). If a spec conflicts with a Hard rule, follow the Hard rule and
+flag the conflict FOR REVIEW.
+
 ## Industry playbooks
 When assembling a prototype or finishing a client, ALWAYS check playbooks/ for a file
 matching the client's industry (from brief.yaml `industry:`, or inferred from the
