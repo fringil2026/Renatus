@@ -1,0 +1,29 @@
+---
+import { SITE } from "../config/site";
+const path = Astro.url.pathname;
+const nav = [
+  { href: "/shop/", label: "The Catalogue" },
+  { href: "/conservatory/", label: "The Conservatory" },
+];
+const active = (href: string) => path === href || (href !== "/" && path.startsWith(href));
+---
+<header class="sticky top-0 z-50 bg-conservatory text-paper">
+  <div class="mx-auto flex max-w-[75rem] items-center justify-between px-5 py-3.5">
+    <a href="/" class="flex items-baseline gap-2.5">
+      <span class="latin text-2xl leading-none text-paper">{SITE.name}</span>
+      <span class="mono-label !text-paper/60 hidden sm:inline">est. herbarium</span>
+    </a>
+    <nav class="flex items-center gap-6">
+      {nav.map((n) => (
+        <a
+          href={n.href}
+          class:list={[
+            "text-sm tracking-wide hover:text-petal transition-colors",
+            active(n.href) ? "text-petal" : "text-paper/90",
+          ]}
+        >{n.label}</a>
+      ))}
+    </nav>
+  </div>
+  <div class="botanical-rule--green botanical-rule"></div>
+</header>

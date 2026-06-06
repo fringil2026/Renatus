@@ -1,0 +1,106 @@
+@import "tailwindcss";
+
+/* ============================================================
+   DESIGN TOKENS — "The Living Herbarium" (mirror /tokens.json)
+   The catalog as a living botanical archive; every product a
+   specimen plate. Light paper pages; conservatory green for
+   chrome/hero/footer; pressed-petal coral the single accent.
+   ============================================================ */
+@theme {
+  --color-conservatory: #1d3a2a;   /* deep near-black green — chrome, hero, footer */
+  --color-paper: #f6f2e7;          /* warm paper — page ground */
+  --color-paper-2: #efe9d8;        /* slightly deeper paper for cards/sections */
+  --color-petal: #c4554d;          /* pressed-petal coral — the ONLY accent */
+  --color-moss: #5a7058;           /* muted moss — secondary text on paper */
+  --color-ink: #22251f;            /* graphite ink — body text */
+  --color-line: #d8cfb8;           /* hairline rule on paper */
+  --color-line-dark: #34503f;      /* hairline rule on green */
+
+  --font-display: "Cormorant Garamond", "Hoefler Text", Georgia, serif;
+  --font-body: "Public Sans", "Helvetica Neue", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+
+html { scroll-behavior: smooth; }
+body {
+  font-family: var(--font-body);
+  background: var(--color-paper);
+  color: var(--color-ink);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Latin binomial — always italic Cormorant; signals collector credibility */
+.latin { font-family: var(--font-display); font-style: italic; line-height: 1.05; }
+
+/* Mono origin / SKU / plate lines */
+.mono-label {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-moss);
+}
+
+/* Plate number, styled like a botanical plate ("Pl. 12") */
+.plate-no {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.12em;
+  color: var(--color-moss);
+}
+
+/* Thin botanical rule line — recurring signature */
+.botanical-rule { border-top: 1px solid var(--color-line); }
+.botanical-rule--green { border-top-color: var(--color-line-dark); }
+
+/* Herbarium tag — the ruled label block under a specimen photo */
+.specimen-tag {
+  border-top: 1px solid var(--color-line);
+  background:
+    repeating-linear-gradient(
+      to bottom,
+      transparent 0,
+      transparent 1.45rem,
+      var(--color-line) 1.45rem,
+      var(--color-line) calc(1.45rem + 1px)
+    );
+}
+
+/* Out-of-stock photo: desaturate 30% per spec */
+.oos-photo { filter: grayscale(0.85) saturate(0.55) brightness(0.97); }
+
+/* "IN CULTIVATION" stamp on out-of-stock plates */
+.in-culture {
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--color-petal);
+  border: 1px solid var(--color-petal);
+  padding: 0.12rem 0.4rem;
+  transform: rotate(-4deg);
+  display: inline-block;
+}
+
+/* Difficulty dot */
+.diff-dot { width: 0.5rem; height: 0.5rem; border-radius: 9999px; display: inline-block; }
+
+/* Hover: label lifts 2px like a card picked off a table (no parallax circus) */
+.lift { transition: transform 0.18s cubic-bezier(0.2, 0.7, 0.2, 1), box-shadow 0.18s ease; }
+.lift:hover { transform: translateY(-2px); box-shadow: 0 8px 22px -14px rgba(34, 37, 31, 0.45); }
+@media (prefers-reduced-motion: reduce) { .lift { transition: none; } .lift:hover { transform: none; } }
+
+/* Paper grain on light sections (subtle) */
+.paper-grain {
+  background-image: radial-gradient(rgba(34, 37, 31, 0.035) 1px, transparent 1px);
+  background-size: 4px 4px;
+}
+
+/* Eyebrow label */
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--color-petal);
+}

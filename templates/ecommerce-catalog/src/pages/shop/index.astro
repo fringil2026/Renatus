@@ -1,0 +1,45 @@
+---
+import Base from "../../layouts/Base.astro";
+import FilterBar from "../../components/FilterBar.astro";
+import SpecimenCard from "../../components/SpecimenCard.astro";
+import { SITE } from "../../config/site";
+import { products } from "../../lib/products";
+import { breadcrumbSchema } from "../../lib/schema";
+
+const all = products();
+const origin = Astro.site?.origin ?? "";
+const crumbs = breadcrumbSchema([
+  { name: "Home", url: new URL("/", origin).href },
+  { name: "The Catalogue", url: new URL("/shop/", origin).href },
+]);
+---
+<Base title={`The Catalogue — ${SITE.name}`} description={`Browse the full specimen catalogue at ${SITE.name}.`}>
+  <script type="application/ld+json" slot="head" set:html={JSON.stringify(crumbs)} />
+
+  <section class="mx-auto max-w-[75rem] px-5 pt-10 pb-5">
+    <p class="eyebrow">The Catalogue</p>
+    <h1 class="latin mt-1 text-4xl text-ink">A living archive of specimens</h1>
+    <p class="mt-2 max-w-2xl text-ink/75">{all.length} specimens catalogued. Filter by genus, difficulty, or what is in bloom this week.</p>
+  </section>
+
+  <FilterBar />
+
+  <section class="mx-auto max-w-[75rem] px-5 py-9">
+    <div class="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+      {all.map((p, i) => (
+        <div
+          data-card
+          data-genus={p.genus}
+          data-difficulty={p.difficulty}
+          data-bloom={String(p.bloom_now && p.stock_qty > 0)}
+          data-stock={String(p.stock_qty > 0)}
+        >
+          <SpecimenCard product={p} plateNo={i + 1} />
+        </div>
+      ))}
+    </div>
+    <p data-empty hidden class="botanical-rule mt-2 pt-8 text-center text-moss">
+      No specimens match those filters — try widening them.
+    </p>
+  </section>
+</Base>

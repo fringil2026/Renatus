@@ -1,0 +1,59 @@
+---
+// THE signature component. Photo top; below it a herbarium tag — italic Latin
+// name, common name, mono origin line, three care glyphs, difficulty dot, price.
+// Out of stock: photo desaturates (handled in SpecimenPhoto), label gains the
+// "In Cultivation" stamp, CTA becomes Notify-me.
+import type { Product } from "../lib/products";
+import { latin, priceLabel, isAvailable, difficultyColor } from "../lib/products";
+import SpecimenPhoto from "./SpecimenPhoto.astro";
+import CareGlyphs from "./CareGlyphs.astro";
+interface Props { product: Product; plateNo?: number; }
+const { product, plateNo } = Astro.props;
+const available = isAvailable(product);
+const href = `/shop/${product.slug}/`;
+---
+<article class="lift group flex flex-col border border-line bg-paper">
+  <a href={href} class="block aspect-[5/4] w-full">
+    <SpecimenPhoto product={product} plateNo={plateNo} class="h-full w-full" />
+  </a>
+  <div class="specimen-tag flex flex-1 flex-col px-4 pb-4 pt-3">
+    <div class="flex items-start justify-between gap-3">
+      <div>
+        <a href={href}><h3 class="latin text-xl text-ink group-hover:text-petal">{latin(product)}</h3></a>
+        <p class="text-sm text-ink/80">{product.common_name}</p>
+      </div>
+      {product.bloom_now && available && (
+        <span class="eyebrow shrink-0 pt-1" title="In bloom now">In Bloom</span>
+      )}
+    </div>
+    <p class="mono-label mt-1">{product.origin}</p>
+
+    <div class="mt-3 flex items-center justify-between">
+      <CareGlyphs product={product} />
+      <span
+        class="diff-dot"
+        style={`background:${difficultyColor(product.difficulty)}`}
+        title={`Difficulty: ${product.difficulty}`}
+        aria-label={`Difficulty: ${product.difficulty}`}
+      ></span>
+    </div>
+
+    <div class="botanical-rule mt-3 pt-3">
+      {available ? (
+        <div class="flex items-center justify-between">
+          <span class="text-lg text-ink">{priceLabel(product)}</span>
+          <a href={href} class="bg-conservatory px-3 py-1.5 text-xs tracking-wide text-paper hover:bg-petal transition-colors">
+            View specimen
+          </a>
+        </div>
+      ) : (
+        <div class="flex items-center justify-between">
+          <span class="mono-label">Currently growing</span>
+          <a href={`/conservatory/#${product.slug}`} class="border border-petal px-3 py-1.5 text-xs tracking-wide text-petal hover:bg-petal hover:text-paper transition-colors">
+            Notify me
+          </a>
+        </div>
+      )}
+    </div>
+  </div>
+</article>

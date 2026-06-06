@@ -1,0 +1,28 @@
+---
+// Three thin line-icon glyphs — light / water / temperature — with accessible
+// titles carrying the actual care strings. Stroke uses currentColor so the
+// parent sets the hue via a token-backed text-* utility.
+import type { Product } from "../lib/products";
+interface Props { product: Product; }
+const { product } = Astro.props;
+const tempLabel = `${product.care_temp}-growing`;
+---
+<ul class="flex items-center gap-3 text-moss" aria-label="Care summary">
+  <li title={`Light: ${product.care_light}`} aria-label={`Light: ${product.care_light}`}>
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round">
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2" />
+    </svg>
+  </li>
+  <li title={`Water: ${product.care_water}`} aria-label={`Water: ${product.care_water}`}>
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 3c3.5 4 6 6.8 6 10a6 6 0 1 1-12 0c0-3.2 2.5-6 6-10Z" />
+    </svg>
+  </li>
+  <li title={`Temperature: ${tempLabel}`} aria-label={`Temperature: ${tempLabel}`}>
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round">
+      <path d="M10 13.5V5a2 2 0 1 1 4 0v8.5a4 4 0 1 1-4 0Z" />
+      <path d="M12 9v6.5" />
+    </svg>
+  </li>
+</ul>

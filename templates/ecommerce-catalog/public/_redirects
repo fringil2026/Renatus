@@ -1,0 +1,9 @@
+# Edge redirect map (Cloudflare Pages / Netlify `_redirects` format).
+# Redirects live HERE at the edge — NEVER in page JavaScript (studio Hard rule).
+# Per the playbook, deep product URLs carry the SEO: map every old deep link to
+# its new /shop/<slug>/ home. This archetype ships empty; the per-client map is
+# drafted from 01-baseline/url-inventory.csv into 02-intake/redirect-map.csv and
+# generated here during the client build.
+#
+# Example:
+# /SearchResults.asp?Cat=42   /shop/   301

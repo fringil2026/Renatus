@@ -1,0 +1,33 @@
+---
+// "Specimen of the Week" — one macro plate on the conservatory-green field with a
+// plate-style caption bottom-left and a single CTA. In Phase 2 the admin picks the
+// featured product; in Phase 1 we feature the first blooming in-stock specimen.
+import type { Product } from "../lib/products";
+import { latin, priceLabel } from "../lib/products";
+import SpecimenPhoto from "./SpecimenPhoto.astro";
+interface Props { product: Product; }
+const { product } = Astro.props;
+const href = `/shop/${product.slug}/`;
+---
+<section class="bg-conservatory text-paper">
+  <div class="mx-auto grid max-w-[75rem] items-stretch gap-0 px-5 py-10 md:grid-cols-2 md:gap-10 md:py-14">
+    <div class="order-2 flex flex-col justify-center md:order-1">
+      <p class="eyebrow">Specimen of the Week</p>
+      <h1 class="latin mt-3 text-5xl leading-[1.02] text-paper md:text-6xl">{latin(product)}</h1>
+      <p class="mt-2 text-lg text-paper/85">{product.common_name}</p>
+      <p class="mono-label mt-3 !text-paper/55">{product.origin}</p>
+      <p class="mt-5 max-w-md text-paper/80">{product.description}</p>
+      <div class="mt-7 flex items-center gap-5">
+        <a href={href} class="bg-petal px-5 py-2.5 text-sm tracking-wide text-paper hover:bg-paper hover:text-conservatory transition-colors">
+          View this specimen
+        </a>
+        <span class="text-paper/80">{priceLabel(product)}</span>
+      </div>
+    </div>
+    <div class="order-1 mb-8 md:order-2 md:mb-0">
+      <div class="border border-line-dark">
+        <SpecimenPhoto product={product} class="aspect-[4/5] w-full" />
+      </div>
+    </div>
+  </div>
+</section>

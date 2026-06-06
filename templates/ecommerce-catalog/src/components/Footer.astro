@@ -1,0 +1,30 @@
+---
+import { SITE } from "../config/site";
+---
+<footer class="mt-24 bg-conservatory text-paper/85">
+  <div class="mx-auto grid max-w-[75rem] gap-8 px-5 py-12 sm:grid-cols-3">
+    <div>
+      <p class="latin text-xl text-paper">{SITE.name}</p>
+      <p class="mt-2 max-w-xs text-sm text-paper/70">{SITE.tagline}</p>
+    </div>
+    <div>
+      <p class="mono-label !text-paper/50">Catalogue</p>
+      <ul class="mt-2 space-y-1.5 text-sm">
+        <li><a href="/shop/" class="hover:text-petal">The Catalogue</a></li>
+        <li><a href="/conservatory/" class="hover:text-petal">The Conservatory</a></li>
+      </ul>
+    </div>
+    <div>
+      <p class="mono-label !text-paper/50">Contact</p>
+      <ul class="mt-2 space-y-1.5 text-sm">
+        <li><a href={`mailto:${SITE.email}`} class="hover:text-petal">{SITE.email}</a></li>
+        {SITE.instagram && <li><a href={SITE.instagram} class="hover:text-petal">Instagram</a></li>}
+      </ul>
+    </div>
+  </div>
+  <div class="botanical-rule--green botanical-rule">
+    <p class="mx-auto max-w-[75rem] px-5 py-4 text-xs text-paper/50">
+      © {SITE.legalName}. Specimen plants are living goods — see shipping &amp; weather-hold policy at checkout.
+    </p>
+  </div>
+</footer>

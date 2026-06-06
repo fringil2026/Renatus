@@ -1,0 +1,27 @@
+---
+import Base from "../layouts/Base.astro";
+import Hero from "../components/Hero.astro";
+import SpecimenCard from "../components/SpecimenCard.astro";
+import { SITE } from "../config/site";
+import { inStock, bloomingNow } from "../lib/products";
+
+const featured = bloomingNow()[0] ?? inStock()[0];
+const fresh = inStock().filter((p) => p.slug !== featured?.slug).slice(0, 6);
+---
+<Base title={`${SITE.name} — ${SITE.tagline}`} description={SITE.tagline}>
+  {featured && <Hero product={featured} />}
+
+  <section class="mx-auto max-w-[75rem] px-5 py-12">
+    <div class="flex items-end justify-between">
+      <div>
+        <p class="eyebrow">From the Catalogue</p>
+        <h2 class="latin mt-1 text-3xl text-ink">Recently pressed &amp; available</h2>
+      </div>
+      <a href="/shop/" class="text-sm text-conservatory hover:text-petal">Browse all specimens →</a>
+    </div>
+    <div class="botanical-rule mt-4"></div>
+    <div class="mt-7 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+      {fresh.map((p, i) => <SpecimenCard product={p} plateNo={i + 1} />)}
+    </div>
+  </section>
+</Base>

@@ -1,0 +1,98 @@
+---
+import Base from "../../layouts/Base.astro";
+import SpecimenPhoto from "../../components/SpecimenPhoto.astro";
+import CareGlyphs from "../../components/CareGlyphs.astro";
+import { SITE } from "../../config/site";
+import { products, latin, priceLabel, isAvailable, difficultyColor } from "../../lib/products";
+import { productSchema, breadcrumbSchema } from "../../lib/schema";
+
+export function getStaticPaths() {
+  return products().map((p) => ({ params: { slug: p.slug }, props: { product: p } }));
+}
+
+const { product } = Astro.props;
+const available = isAvailable(product);
+const origin = Astro.site?.origin ?? "";
+const pageUrl = new URL(`/shop/${product.slug}/`, origin).href;
+
+const ld = productSchema(product, origin, pageUrl);
+const crumbs = breadcrumbSchema([
+  { name: "Home", url: new URL("/", origin).href },
+  { name: "The Catalogue", url: new URL("/shop/", origin).href },
+  { name: latin(product), url: pageUrl },
+]);
+const careRows = [
+  ["Light", product.care_light],
+  ["Water", product.care_water],
+  ["Temperature", `${product.care_temp}-growing`],
+  ["Difficulty", product.difficulty],
+];
+---
+<Base title={`${latin(product)} — ${product.common_name} · ${SITE.name}`} description={product.description}>
+  <Fragment slot="head">
+    <script type="application/ld+json" set:html={JSON.stringify(ld)} />
+    <script type="application/ld+json" set:html={JSON.stringify(crumbs)} />
+  </Fragment>
+
+  <div class="mx-auto max-w-[75rem] px-5 py-9">
+    <nav class="mono-label mb-5" aria-label="Breadcrumb">
+      <a href="/" class="hover:text-petal">Home</a> ·
+      <a href="/shop/" class="hover:text-petal">The Catalogue</a> ·
+      <span class="text-ink/70">{product.genus}</span>
+    </nav>
+
+    <div class="grid gap-9 md:grid-cols-2">
+      <div class="border border-line">
+        <SpecimenPhoto product={product} class="aspect-[4/5] w-full" />
+      </div>
+
+      <div class="flex flex-col">
+        {product.bloom_now && available && <p class="eyebrow">In bloom now</p>}
+        <h1 class="latin mt-1 text-5xl leading-none text-ink">{latin(product)}</h1>
+        <p class="mt-2 text-xl text-ink/80">{product.common_name}</p>
+        <p class="mono-label mt-2">{product.origin} · SKU {product.id}</p>
+
+        <p class="mt-5 text-ink/85">{product.description}</p>
+
+        <div class="botanical-rule mt-6 pt-5">
+          <dl class="grid grid-cols-[7rem_1fr] gap-y-2 text-sm">
+            {careRows.map(([k, v]) => (
+              <Fragment>
+                <dt class="mono-label">{k}</dt>
+                <dd class="text-ink/85">
+                  {k === "Difficulty" ? (
+                    <span class="inline-flex items-center gap-2">
+                      <span class="diff-dot" style={`background:${difficultyColor(product.difficulty)}`}></span>{v}
+                    </span>
+                  ) : v}
+                </dd>
+              </Fragment>
+            ))}
+          </dl>
+        </div>
+
+        <div class="botanical-rule mt-6 flex items-center justify-between pt-5">
+          <span class="text-2xl text-ink">{priceLabel(product)}</span>
+          {available ? (
+            <button
+              type="button"
+              data-add-to-cart={product.id}
+              disabled
+              title="Online checkout opens in a later launch phase"
+              class="cursor-not-allowed bg-conservatory/60 px-6 py-2.5 text-sm tracking-wide text-paper"
+            >Add to cart</button>
+          ) : (
+            <a href={`/conservatory/#${product.slug}`} class="border border-petal px-6 py-2.5 text-sm tracking-wide text-petal hover:bg-petal hover:text-paper transition-colors">
+              Notify me when available
+            </a>
+          )}
+        </div>
+        {available ? (
+          <p class="mono-label mt-3">{product.stock_qty} in cultivation, ready to ship</p>
+        ) : (
+          <p class="mono-label mt-3">Currently growing — join the notify list above</p>
+        )}
+      </div>
+    </div>
+  </div>
+</Base>

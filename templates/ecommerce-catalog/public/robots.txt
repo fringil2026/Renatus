@@ -1,0 +1,4 @@
+# Staging builds also ship a `noindex` meta tag (see BaseHead.astro); this file is
+# the production posture. Crawl freely once PUBLIC_INDEXABLE=true at launch.
+User-agent: *
+Allow: /

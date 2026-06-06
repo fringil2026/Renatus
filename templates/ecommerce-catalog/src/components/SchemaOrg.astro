@@ -1,0 +1,16 @@
+---
+// Site-wide Store/Organization JSON-LD. Product and BreadcrumbList schema are
+// emitted per-page by the product route — never delete these blocks, update data.
+import { SITE } from "../config/site";
+const schema = {
+  "@context": "https://schema.org",
+  "@type": "Store",
+  name: SITE.name,
+  legalName: SITE.legalName,
+  description: SITE.tagline,
+  url: SITE.domain,
+  email: SITE.email,
+  ...(SITE.instagram ? { sameAs: [SITE.instagram] } : {}),
+};
+---
+<script type="application/ld+json" set:html={JSON.stringify(schema)} />

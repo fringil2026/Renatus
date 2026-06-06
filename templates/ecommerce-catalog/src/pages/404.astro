@@ -1,0 +1,14 @@
+---
+import Base from "../layouts/Base.astro";
+import { SITE } from "../config/site";
+---
+<Base title={`Not found — ${SITE.name}`} description="That page could not be found.">
+  <section class="mx-auto max-w-[75rem] px-5 py-24 text-center">
+    <p class="eyebrow">Pl. 404</p>
+    <h1 class="latin mt-3 text-5xl text-ink">This plate is missing from the archive</h1>
+    <p class="mt-3 text-ink/75">The specimen you were looking for may have been re-catalogued.</p>
+    <a href="/shop/" class="mt-7 inline-block bg-conservatory px-5 py-2.5 text-sm tracking-wide text-paper hover:bg-petal transition-colors">
+      Return to the Catalogue
+    </a>
+  </section>
+</Base>
