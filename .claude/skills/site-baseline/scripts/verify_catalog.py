@@ -13,22 +13,22 @@ import json, re, sys
 from pathlib import Path
 
 GENUS_SPECIES = re.compile(r"orchid\s+genus:\s*([A-Z][A-Za-z()\- ]+?)\s*,\s*orchid\s+species:\s*([A-Za-z0-9'’.\- ]+)", re.I)
-IMG_REF = re.compile(r"images[\\/]+species[\\/]+(\d+)(lrg|med)\.jpg", re.I)
+# Cover-based truth (Edit 009): verify against the product-cover <img>, NOT "first lrg" — otherwise
+# the verifier shares the extractor's blind spot and self-confirms a wrong pairing.
+COVER = re.compile(r'<img[^>]*js-product-cover[^>]*>', re.I)
+COVER_PICID = re.compile(r'src="[^"]*?species[\\/]+(\d+)', re.I)
 
 
-def page_index(mirror_root: Path):
-    """Map primary-image PicId -> (genus, species, page_filename) for every product page."""
-    idx = {}
-    for p in sorted(mirror_root.glob("pictureframe.asp?*id=*.html")):
-        html = p.read_text(errors="ignore")
-        m = GENUS_SPECIES.search(html)
-        if not m:
-            continue
-        refs = IMG_REF.findall(html)
-        primary = next((pid for pid, sz in refs if sz.lower() == "lrg"), None) or (refs[0][0] if refs else None)
-        if primary and primary not in idx:
-            idx[primary] = (m.group(1).strip().rstrip("."), m.group(2).strip().rstrip("."), p.name)
-    return idx
+def cover_of(html):
+    """(picid, has_photo) from the product-cover <img>. nophoto.jpg => (None, False)."""
+    m = COVER.search(html)
+    if not m:
+        return None, False
+    tag = m.group(0)
+    if "nophoto" in tag.lower():
+        return None, False
+    s = COVER_PICID.search(tag)
+    return (s.group(1) if s else None), True
 
 
 def norm(s: str) -> str:
@@ -37,31 +37,38 @@ def norm(s: str) -> str:
 
 def main():
     client = Path(sys.argv[1]).resolve()
+    mirror = client / "00-source" / "mirror" / "andysorchids.com"
     data_path = client / "03-site" / "src" / "data" / "products.json"
     data = json.loads(data_path.read_text())
-    idx = page_index(client / "00-source" / "mirror" / "andysorchids.com")
 
     mism, unver, ok = [], [], 0
     for prod in data["products"]:
+        sp = prod.get("source_page", "")
+        if not sp or not (mirror / sp).exists():
+            unver.append((prod["id"], "no resolvable source_page"))
+            continue
+        html = (mirror / sp).read_text(errors="ignore")
+        g = GENUS_SPECIES.search(html)
+        pg_genus = g.group(1).strip().rstrip(".") if g else ""
+        pg_species = g.group(2).strip().rstrip(".") if g else ""
+        cover_picid, has_photo = cover_of(html)
         photos = prod.get("photos") or []
-        if not photos:
-            unver.append((prod["id"], "no photo"))
-            continue
-        picid = Path(photos[0]).stem  # /specimens/8865.jpg -> 8865
-        page = idx.get(picid)
-        if not page:
-            unver.append((prod["id"], f"photo {picid} not found on any product page"))
-            continue
-        pg_genus, pg_species, pg_name = page
-        prod["source_page"] = pg_name
-        # correspondence: the photo's own page must name this product's genus + species-core
+        our_picid = Path(photos[0]).stem if photos else None
+        # name check: the source page must name this product's genus + species-core
         genus_ok = norm(pg_genus).startswith(norm(prod["genus"])) or norm(prod["genus"]).startswith(norm(pg_genus))
-        species_core = norm(prod["species"].split()[0]) if prod["species"].split() else ""
-        species_ok = species_core and species_core in norm(pg_species)
-        if genus_ok and species_ok:
+        sp_core = norm(prod["species"].split()[0]) if prod["species"].split() else ""
+        species_ok = bool(sp_core) and sp_core in norm(pg_species)
+        # photo check vs the page's TRUE cover image (or: no photo when the page is nophoto)
+        photo_ok = (our_picid == cover_picid) if has_photo else (not photos)
+        if genus_ok and species_ok and photo_ok:
             ok += 1
         else:
-            mism.append((prod["id"], f"photo {picid}'s page is '{pg_genus} {pg_species}' but product says '{prod['genus']} {prod['species']}'"))
+            why = []
+            if not (genus_ok and species_ok):
+                why.append(f"name vs page '{pg_genus} {pg_species}'")
+            if not photo_ok:
+                why.append(f"photo {our_picid} != cover {cover_picid or 'NOPHOTO'}")
+            mism.append((prod["id"], "; ".join(why)))
 
     data_path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n")
     print(f"verify_catalog: {ok} OK · {len(mism)} MISMATCH · {len(unver)} unverified (of {len(data['products'])})")

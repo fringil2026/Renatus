@@ -14,8 +14,22 @@ SKIP_GENERA = {"supplies", "books", "supply"}
 
 GENUS_SPECIES = re.compile(r"orchid\s+genus:\s*([A-Z][A-Za-z()\- ]+?)\s*,\s*orchid\s+species:\s*([A-Za-z0-9'’.\- ]+)", re.I)
 TITLE_NAME = re.compile(r"<title>\s*(.*?)\s*</title>", re.I | re.S)
-# primary image ref looks like images/species/1234lrg.jpg (fwd slashes); thumbs use backslashes + med
-IMG_REF = re.compile(r"images[\\/]+species[\\/]+(\d+)(lrg|med)\.jpg", re.I)
+# CORRECTNESS FIX (Edit 009): the product's main photo is the js-product-cover <img>, NOT the
+# first images/species/*lrg.jpg on the page — pages render a stray featured/related image first,
+# so "first lrg" pairs the wrong plant's photo. Parse the cover tag; nophoto.jpg => no photo.
+COVER = re.compile(r'<img[^>]*js-product-cover[^>]*>', re.I)
+COVER_PICID = re.compile(r'src="[^"]*?species[\\/]+(\d+)', re.I)
+
+def cover_image(html):
+    """Return (picid, has_photo) from the product-cover <img>. nophoto.jpg => (None, False)."""
+    m = COVER.search(html)
+    if not m:
+        return None, False
+    tag = m.group(0)
+    if "nophoto" in tag.lower():
+        return None, False
+    s = COVER_PICID.search(tag)
+    return (s.group(1) if s else None), True
 
 def find_image_on_disk(mirror_root, picid):
     """The mirror stored files with literal backslashes in the name. Try lrg then med,
@@ -57,11 +71,10 @@ def main():
             continue
         if genus.lower() in SKIP_GENERA or "inch" in species.lower() or "basket" in species.lower():
             continue
-        # collect candidate picids referenced; prefer the first 'lrg' (primary)
-        refs = IMG_REF.findall(html)
-        primary = next((pid for pid, sz in refs if sz.lower() == "lrg"), None) \
-            or (refs[0][0] if refs else None)
-        if not primary:
+        # the product's TRUE photo is the cover <img> (Edit 009 fix). nophoto => skip (no image
+        # to ship for this product; image-bearing builds want only products with a real photo).
+        primary, has_photo = cover_image(html)
+        if not has_photo or not primary:
             continue
         img = find_image_on_disk(mirror_root, primary)
         if not img:
