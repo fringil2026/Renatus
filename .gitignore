@@ -17,3 +17,4 @@ __pycache__/
 # secrets — never commit (rehearsal or real)
 *.env
 **/secrets/
+MASTERFILE*.md
