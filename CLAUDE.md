@@ -120,8 +120,12 @@ ends with, in order:
 1. `npm run build` (verification stays MANDATORY — a failing build is never published or reported done);
 2. an automatic Publish preview (the steps above — no need to be asked);
 3. `preview_url` + `preview_published_at` refreshed in `status.json`.
-**Reporting:** report the preview URL as where to see the work. Do NOT offer `localhost` / `npm run
-dev` as the review path (the dev server stays available for your own debugging only).
+**Reporting:** report the preview URL as where to see the WORK (the client site). Do NOT offer
+`npm run dev` (the client-site dev server) as the review path — it stays available for your own
+debugging only. This applies ONLY to client-site review. The **studio dashboard at
+`localhost:8788` is NOT a client site** — it is the control panel for creating clients and running
+the pipeline, and remains the local entry point (where the human starts a client and gets the
+preview link) until the cloud migration. Keep referencing it for that purpose.
 **On deploy failure:** the work STILL commits; log the failure loudly to `status.json` `log[]` and
 leave the prior `preview_url` with a `preview_stale: true` flag so the dashboard staleness hint
 fires — NEVER silently leave a stale URL unflagged. Then surface the failure in the report.
