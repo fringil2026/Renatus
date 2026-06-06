@@ -307,6 +307,31 @@ archive the log to `.claude/audit/<YYYY-MM-DD>-<task-slug>.log` and start a fres
 Pipeline support: image records carry `source_page`, pixel `dimensions`, and the
 `largest_variant` URL; builds consume that record (never raw thumbnail URLs).
 
+## Verification loop — binding on Command 1 and any full-build chain
+After assembling a prototype, do NOT report or publish "done" on belief. Run the parity checklist
+(`01-baseline/parity-checklist.md`): execute each row's verification method against the BUILT OUTPUT
+(`dist/`, the rendered routes) — NEVER against intentions or source code you remember writing. For
+every unmet row: implement the fix, `npm run build`, re-verify THAT row and any row the fix could
+have disturbed. Iterate until every row is `[x]` verified-with-evidence or `[B]` BLOCKED naming the
+exact missing client fact / deliverable ID (BLOCKED is for genuinely ungated-on-us items only —
+never a euphemism for "didn't get to it"). HARD CAP: 5 iterations; if rows remain unmet at the cap,
+STOP, report the survivors honestly as failures with your diagnosis, and open a decision card —
+never loop forever, never quietly ship around them. The completed checklist, with per-row evidence
+one-liners and the iteration count, is pasted verbatim into the build report and committed alongside
+the build. **Publish-always runs only after the loop exits.**
+- **Scope:** the loop also runs (against the relevant checklist subset) after "Process edits" batches
+  and at "Finish". The full-rehearsal chain runs it at the assemble step AND again after Phase 4 with
+  the backend rows added (test checkout completes, admin CRUD works, notify-email loop fires).
+- A checklist row without an executable verification method is itself invalid (fix the checklist).
+
+## Baseline = the scrape ladder (resilient to bot-blocked sites)
+`run_baseline.py` is an escalating cascade, not a fixed 3-method run: crawler → rendered browser
+(Playwright, the anti-bot weapon) → wget mirror (breadth, only when content is flowing) → Wayback
+archive (only when blocked; content is STALE, labelled `ARCHIVE-*`, never price/stock truth) →
+human (a decision card with a ready-to-send owner-export note). Missing tools log LOUDLY and count
+as rung failures — never a silent skip. `coverage.md` records each rung + which rungs the baseline
+rests on; the census + tokens note evidence source LIVE vs ARCHIVE. See SYSTEM.md.
+
 ## Hard rules — always, regardless of skill loading
 - NEVER fabricate a client fact. Blanks stay blank and get flagged FOR REVIEW.
 - NEVER edit templates/ for a client; copy first.

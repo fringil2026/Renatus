@@ -40,6 +40,16 @@ def load_evidence(client: Path):
     mirror_names = ""
     if mirror.exists():
         mirror_names = " ".join(f.name.lower() for f in mirror.rglob("*.html"))
+    # ARCHIVE evidence (rung 4): fold Wayback snapshot HTML into the blob so the census still
+    # works on a bot-blocked site — labelled ARCHIVE via evidence-source.txt.
+    archive = client / "00-source" / "archive"
+    if archive.exists():
+        for f in archive.rglob("*.html"):
+            t = f.read_text(errors="ignore").lower()
+            text_blob.append(t[:2000])
+            mirror_names += " " + f.name.lower()
+    es = client / "00-source" / "evidence-source.txt"
+    evidence_source = es.read_text().strip() if es.exists() else "LIVE"
     return {
         "paths": paths,
         "form_actions": " ".join(form_actions),
@@ -48,6 +58,7 @@ def load_evidence(client: Path):
         "text": " ".join(text_blob),
         "mirror_names": mirror_names,
         "n_forms": sum(len(p.get("forms", [])) for p in pages),
+        "evidence_source": evidence_source,
     }
 
 
@@ -108,54 +119,93 @@ def build_features():
         hits = [n for n in ("facebook", "fbq", "connect.facebook", "gtag", "googletagmanager") if n in ev["scripts"]]
         return f"tracking/pixel scripts: {', '.join(hits)}" if hits else None
 
+    # (name, detect, class, static_feasible, unblock, recommendation, VERIFY-against-dist/)
     return [
-        ("Site search",          search,    "CARRY-OVER", True,  "",        "Reimplement as client-side search over the catalog."),
-        ("Filter / sort",        filt,      "CARRY-OVER", True,  "",        "Genus/care/bloom filters + sort, client-side."),
-        ("Pagination",           pag,       "CARRY-OVER", True,  "",        "Static pagination or lazy reveal over the grid."),
-        ("Category / genus nav", catnav,    "CARRY-OVER", True,  "",        "Genus filter chips + per-genus care pages."),
-        ("Contact form",         contact,   "STUB+FLAG",  True,  "D-2.3.1", "Static form UI; wire to the owner's inbox/handler."),
-        ("Cart",                 cart,      "STUB+FLAG",  False, "D-2.7.1", "Cart UI now; live at checkout phase (Stripe)."),
-        ("Checkout",             checkout,  "STUB+FLAG",  False, "D-2.7.1", "Hosted Stripe Checkout; needs the owner's account."),
-        ("Accounts / login",     login,     "STUB+FLAG",  False, "D-2.7.2", "Auth via the data backend (Supabase); needs project."),
-        ("Wishlist",             wishlist,  "STUB+FLAG",  False, "D-2.7.2", "Account-bound; ships after auth."),
-        ("Newsletter signup",    newsletter,"STUB+FLAG",  True,  "D-2.7.3", "Capture UI now; sends once email infra (Resend) is verified."),
-        ("Tracking pixels",      pixel,     "STUB+FLAG",  True,  "D-2.4.4", "Re-add behind a consent banner; needs pixel-account access."),
-        ("Product reviews",      reviews,   "OBSOLETE",   False, "",        "Not present / low value at this catalog size; revisit later."),
-        ("Product compare",      compare,   "OBSOLETE",   True,  "",        "Low-value on a specialist catalog; drop in favor of search + care guides."),
+        ("Site search",          search,    "CARRY-OVER", True,  "",        "Reimplement as client-side search over the catalog.", "dist/shop/ has a search input ([data-search]/[type=search]) that filters the visible cards"),
+        ("Filter / sort",        filt,      "CARRY-OVER", True,  "",        "Genus/care/bloom filters + sort, client-side.", "filter/sort controls present in dist/shop/ and reduce/reorder visible cards"),
+        ("Pagination",           pag,       "CARRY-OVER", True,  "",        "Static pagination or lazy reveal over the grid.", "dist/shop/ shows the full grid OR a working load-more/pagination control"),
+        ("Category / genus nav", catnav,    "CARRY-OVER", True,  "",        "Genus filter chips + per-genus care pages.", "genus chips/links present in dist/; selecting one filters to that genus"),
+        ("Contact form",         contact,   "STUB+FLAG",  True,  "D-2.3.1", "Static form UI; wire to the owner's inbox/handler.", "contact form UI present in dist/ (action wired OR honest stub note visible)"),
+        ("Cart",                 cart,      "STUB+FLAG",  False, "D-2.7.1", "Cart UI now; live at checkout phase (Stripe).", "cart affordance visible as an honest Phase-3 stub (no dead button)"),
+        ("Checkout",             checkout,  "STUB+FLAG",  False, "D-2.7.1", "Hosted Stripe Checkout; needs the owner's account.", "checkout entry is an honest stub linking to the roadmap, not a broken flow"),
+        ("Accounts / login",     login,     "STUB+FLAG",  False, "D-2.7.2", "Auth via the data backend (Supabase); needs project.", "account/login stub visible in dist/ and flagged Phase 2"),
+        ("Wishlist",             wishlist,  "STUB+FLAG",  False, "D-2.7.2", "Account-bound; ships after auth.", "wishlist stub visible in dist/ and flagged post-auth"),
+        ("Newsletter signup",    newsletter,"STUB+FLAG",  True,  "D-2.7.3", "Capture UI now; sends once email infra (Resend) is verified.", "newsletter capture UI present in dist/ (footer/section)"),
+        ("Tracking pixels",      pixel,     "STUB+FLAG",  True,  "D-2.4.4", "Re-add behind a consent banner; needs pixel-account access.", "pixel re-added behind a consent banner OR flagged in roadmap (no silent tracking)"),
+        ("Product reviews",      reviews,   "OBSOLETE",   False, "",        "Not present / low value at this catalog size; revisit later.", "confirmed ABSENT in dist/ (obsolete — intentional)"),
+        ("Product compare",      compare,   "OBSOLETE",   True,  "",        "Low-value on a specialist catalog; drop in favor of search + care guides.", "confirmed ABSENT in dist/ (obsolete — intentional)"),
     ]
+
+
+# Standing gate rows — appended to EVERY parity checklist (with executable verification methods).
+STANDING_GATES = [
+    ("Build passes", "`npm run build` exits 0 with no errors"),
+    ("Zero banned design patterns", "no literal hex in src/components/* (grep) — all colour/font via @theme tokens"),
+    ("noindex present", "dist/ HTML contains robots noindex unless PUBLIC_INDEXABLE=true"),
+    ("Mobile ~390px structure", "layout holds at a 390px viewport — no horizontal overflow / broken grid"),
+    ("Correspondence verifier 0 mismatches", "verify_catalog.py reports 0 mismatches over the built catalog"),
+    ("Brand moment named + placed", "the concept names the brand moment AND where it lives; it is present in dist/"),
+]
+
+
+def write_parity_checklist(client, rows, source):
+    L = [f"# Parity Checklist — evidence source: {source}", "",
+         "BINDING checklist. Every row stays `[ ]` until its verification method is executed against",
+         "the BUILT OUTPUT (dist/, rendered routes) — never against intentions or remembered source.",
+         "`[x]` = verified-with-evidence · `[B]` = BLOCKED (name the missing client fact / deliverable ID).",
+         "A row without an executable verification method is itself invalid.", "",
+         "## Feature parity (from census)"]
+    if rows:
+        for name, evidence, klass, static, unblock, rec, verify in rows:
+            unb = f" · unblock {unblock}" if unblock else ""
+            L.append(f"- [ ] **{name}** ({klass}{unb}) — VERIFY: {verify}")
+    else:
+        L.append("- _(no features detected from evidence — census was empty; checklist rests on standing gates)_")
+    L += ["", "## Standing gates (every build)"]
+    for name, verify in STANDING_GATES:
+        L.append(f"- [ ] **{name}** — VERIFY: {verify}")
+    out = client / "01-baseline" / "parity-checklist.md"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text("\n".join(L) + "\n")
+    return out
 
 
 def main():
     client = Path(sys.argv[1]).resolve()
     ev = load_evidence(client)
+    source = ev.get("evidence_source", "LIVE")
     rows = []
-    for name, detect, klass, static, unblock, rec in build_features():
+    for name, detect, klass, static, unblock, rec, verify in build_features():
         evidence = detect(ev)
         if evidence:
-            rows.append((name, evidence, klass, static, unblock, rec))
+            rows.append((name, evidence, klass, static, unblock, rec, verify))
 
     counts = {"CARRY-OVER": 0, "STUB+FLAG": 0, "OBSOLETE": 0}
     for r in rows:
         counts[r[2]] += 1
 
     L = ["# Feature Census — detected from existing 00-source (no re-scrape)", "",
+         f"Evidence source: **{source}**" + (" (STALE — design/copy/feature only, not price/stock)" if source.startswith("ARCHIVE") else ""), "",
          f"Detected {len(rows)} macro-features · "
          f"CARRY-OVER {counts['CARRY-OVER']} · STUB+FLAG {counts['STUB+FLAG']} · OBSOLETE {counts['OBSOLETE']}", "",
          "| Feature | Evidence | Class | Static-feasible | Unblock (deliverable) | Recommendation |",
          "|---|---|---|---|---|---|"]
-    for name, evidence, klass, static, unblock, rec in rows:
+    for name, evidence, klass, static, unblock, rec, verify in rows:
         L.append(f"| {name} | {evidence} | **{klass}** | {'yes' if static else 'no'} | {unblock or '—'} | {rec} |")
     L += ["",
           "## How to read this",
           "- **CARRY-OVER** features MUST appear in the prototype (parity floor; additions come on top).",
           "- **STUB+FLAG** features get a visible, honest stub in the prototype and an unblock fact in",
           "  `02-intake/deliverables-request.md` §2.7 (cross-referenced above).",
-          "- **OBSOLETE** features are recommended for removal with the reason given — confirm with the human."]
+          "- **OBSOLETE** features are recommended for removal with the reason given — confirm with the human.",
+          "- Every feature has a row in `parity-checklist.md` with an executable verification method."]
     out = client / "01-baseline" / "feature-census.md"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text("\n".join(L) + "\n")
+    checklist = write_parity_checklist(client, rows, source)
     print(f"feature-census: {len(rows)} features "
-          f"(CARRY-OVER {counts['CARRY-OVER']}, STUB+FLAG {counts['STUB+FLAG']}, OBSOLETE {counts['OBSOLETE']}) -> {out}")
+          f"(CARRY-OVER {counts['CARRY-OVER']}, STUB+FLAG {counts['STUB+FLAG']}, OBSOLETE {counts['OBSOLETE']}) "
+          f"[{source}] -> {out}; parity-checklist -> {checklist}")
 
 
 if __name__ == "__main__":
