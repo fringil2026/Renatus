@@ -402,6 +402,74 @@ def run_chat(key, message):
                           "tools": tools[:30], "at": now()})
     with TASK_LOCK: TASKS.pop(key, None)
 
+# ---------------- decisions inbox (filename-is-state, mirrors edits) ----------------
+def decisions_dir(scope):
+    return (ROOT / ".claude" / "decisions") if scope == STUDIO_KEY else (CLIENTS / scope / "02-intake" / "decisions")
+
+def parse_decision(path):
+    d = {"question": "", "recommendation": "", "reason": "", "resume_job": "",
+         "chosen": "", "chosen_at": "", "context": [], "options": []}
+    section, cur = None, None
+    for raw in path.read_text().splitlines():
+        if not raw.strip():
+            continue
+        s = raw.strip(); indent = len(raw) - len(raw.lstrip())
+        if indent == 0 and s in ("context:", "options:"):
+            section = s[:-1]; cur = None; continue
+        if indent == 0:
+            m = re.match(r'^(question|recommendation|reason|resume_job|chosen|chosen_at):\s*(.*)$', s)
+            if m:
+                d[m.group(1)] = m.group(2).strip().strip('"'); section = None; cur = None; continue
+        if section == "context" and s.startswith("- "):
+            d["context"].append(s[2:].strip().strip('"')); continue
+        if section == "options":
+            if s.startswith("- "):
+                cur = {"id": "", "label": "", "consequence": "", "next": ""}; d["options"].append(cur); s = s[2:].strip()
+            mm = re.match(r'^(id|label|consequence|next):\s*(.*)$', s)
+            if mm and cur is not None:
+                cur[mm.group(1)] = mm.group(2).strip().strip('"')
+    return d
+
+def list_open_decisions():
+    out = []
+    scopes = [STUDIO_KEY] + ([d.name for d in CLIENTS.iterdir() if d.is_dir() and not d.name.startswith(".")] if CLIENTS.exists() else [])
+    for scope in scopes:
+        dd = decisions_dir(scope)
+        if not dd.exists():
+            continue
+        for f in sorted(dd.glob("*-OPEN-*.yaml")):
+            dec = parse_decision(f)
+            dec.update({"scope": scope, "file": f.name})
+            out.append(dec)
+    return out
+
+def open_decision_count(slug):
+    dd = decisions_dir(slug)
+    return len(list(dd.glob("*-OPEN-*.yaml"))) if dd.exists() else 0
+
+def resolve_decision(scope, fname, choice):
+    dd = decisions_dir(scope)
+    src = dd / fname
+    if not src.exists() or "-OPEN-" not in fname:
+        return False, "decision not found / already resolved"
+    dec = parse_decision(src)
+    if choice not in [o["id"] for o in dec["options"]]:
+        return False, "unknown option"
+    text = src.read_text().rstrip() + f'\nchosen: {choice}\nchosen_at: "{now()}"\n'
+    dest = dd / fname.replace("-OPEN-", "-RESOLVED-")
+    dest.write_text(text)
+    src.unlink()
+    where = "studio" if scope == STUDIO_KEY else scope
+    if scope != STUDIO_KEY:
+        bump(CLIENTS / scope, msg=f"decision resolved [{fname}] -> {choice}")
+    # resume a blocked job if the decision carried one
+    if dec.get("resume_job") and scope != STUDIO_KEY:
+        with TASK_LOCK:
+            if scope not in TASKS:
+                TASKS[scope] = {"kind": "resumed", "label": dec["resume_job"], "started": now(), "tail": [], "proc": None}
+                threading.Thread(target=run_advance, args=(scope, dec["resume_job"], "resumed job", None), daemon=True).start()
+    return True, dest.name
+
 def list_clients():
     out = []
     if not CLIENTS.exists(): return out
@@ -427,6 +495,7 @@ def list_clients():
                     "can_configure": st.get("stage") == "prototype" and has_binding_spec(d),
                     "backend_cfg": (lambda c: {"status": c["status"], "version": c["version"], "mode": c.get("mode", "")} if c else None)(parse_backend_config(d)),
                     "busy": d.name in TASKS,
+                    "decisions_open": open_decision_count(d.name),
                     "task_tail": TASKS.get(d.name, {}).get("tail", [])[-6:] if d.name in TASKS else [],
                     "log": st.get("log", [])[-4:]})
     return out
@@ -486,6 +555,17 @@ button.adv:hover:not([disabled]){background:var(--amber);color:var(--ink)}
 button.adv[disabled]{color:var(--muted);border-color:var(--line);cursor:not-allowed;opacity:.6}
 .run{font-family:var(--m);font-size:.66rem;color:#7fd18f}
 .rehbadge{font-family:var(--m);font-size:.56rem;letter-spacing:.12em;background:#7a4dff;color:#fff;padding:.15em .5em;border-radius:2px}
+.needbadge{font-family:var(--m);font-size:.58rem;letter-spacing:.1em;background:#c0392b;color:#fff;padding:.18em .55em;border-radius:2px}
+.needstrip{border:1px solid #c0392b;background:#1a0f0f;margin:0 0 1.4rem;padding:1rem 1.1rem}
+.needhead{font-family:var(--d);text-transform:uppercase;color:#ff6b5e;letter-spacing:.04em;margin-bottom:.7rem}
+.deccard{border-top:1px solid #3a2222;padding:.8rem 0}
+.decq{font-size:.95rem}.decscope{font-family:var(--m);font-size:.6rem;color:var(--muted);border:1px solid var(--line);padding:.05em .4em;margin-left:.4rem}
+.decctx{font-family:var(--m);font-size:.68rem;color:var(--muted);margin:.4rem 0;padding-left:1.1rem}
+.decopts{display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.5rem}
+.decopt{background:transparent;color:var(--paper);border:1px solid var(--line);font-family:var(--b);font-weight:400;font-size:.8rem;text-transform:none}
+.decopt:hover{border-color:var(--amber);color:var(--amber)}
+.decrec{background:var(--amber);color:var(--ink);border:1px solid var(--amber);font-family:var(--b);font-weight:600;font-size:.8rem;text-transform:none}
+.decreason{font-family:var(--m);font-size:.64rem;color:var(--muted);margin-top:.4rem}
 .tasktail{font-family:var(--m);font-size:.62rem;color:#7fd18f;background:#0a1a10;border-left:3px solid #3a6b4f;
 padding:.5rem .7rem;margin-top:.5rem;white-space:pre-wrap;max-height:9rem;overflow:auto}
 .modal{position:fixed;inset:0;background:rgba(4,9,14,.78);display:flex;align-items:center;justify-content:center;z-index:50}
@@ -529,6 +609,7 @@ padding:.5rem .7rem;margin-top:.5rem;white-space:pre-wrap;max-height:9rem;overfl
     <textarea id="cin-studio" placeholder="Message Claude (studio-wide, unscoped)…" required></textarea>
     <button>Send</button></form>
 </div></div>
+<div id="needs"></div>
 <div id="list"><p class="empty">Loading…</p></div>
 </div>
 <div id="modal" class="modal" style="display:none"><div class="modalbox">
@@ -662,11 +743,13 @@ async function load(){
   const d = await api('/api/clients'); DATA = d;
   document.getElementById('stats').textContent =
     `active scrapes ${d.running}/${d.max} · queued ${d.queued} · archived projects ${d.archived}`;
+  renderNeeds(d.decisions||[]);
   const el = document.getElementById('list');
   if(!d.clients.length){ el.innerHTML='<p class="empty">No active clients — start one above.</p>'; return; }
   el.innerHTML = d.clients.map(c=>`<div class="row${c.done?' fin':''}">
     <div class="top"><div><span class="nm">${c.name}</span> <span class="dom">${c.domain}</span></div>
     <div class="btns"><span class="chip">${c.stage}</span>
+      ${c.decisions_open?`<span class="needbadge">${c.decisions_open} decision${c.decisions_open>1?'s':''}</span>`:''}
       ${c.busy?'<span class="run">● running…</span>':''}
       ${c.advance?`<button class="adv" ${c.advance.enabled?'':'disabled'} title="${(c.advance.tooltip||c.advance.desc||'').replace(/"/g,'&quot;')}" onclick="openAdvance('${c.slug}')">${c.advance.label}</button>${c.advance.badge?`<span class="rehbadge">${c.advance.badge}</span>`:''}<span class="copy" title="Copy terminal command" onclick="cpCmd('${c.slug}')">⧉</span>`:''}
       ${c.can_configure?`<button class="ghost" onclick="configBackend('${c.slug}')">Configure backend${c.backend_cfg?` · ${c.backend_cfg.status} v${c.backend_cfg.version}`:''}</button>`:''}
@@ -706,6 +789,21 @@ async function answers(e,slug){ e.preventDefault();
   await api('/answers', {slug, t:e.target.querySelector('textarea').value}); load(); return false; }
 async function act(p,slug){ await api(p,{slug}); load(); }
 function cp(t){ navigator.clipboard&&navigator.clipboard.writeText(t); }
+function renderNeeds(decs){
+  const box=document.getElementById('needs');
+  if(!decs.length){ box.innerHTML=''; return; }
+  box.innerHTML=`<div class="needstrip"><div class="needhead">⬤ Needs your call · ${decs.length}</div>`+
+    decs.map(dn=>`<div class="deccard">
+      <div class="decq">${esc(dn.question)} <span class="decscope">${dn.scope==='__studio__'?'studio':esc(dn.scope)}</span></div>
+      ${dn.context.length?`<ul class="decctx">${dn.context.map(c=>`<li>${esc(c)}</li>`).join('')}</ul>`:''}
+      <div class="decopts">${dn.options.map(o=>`<button class="${o.id===dn.recommendation?'decrec':'decopt'}" onclick="resolveDec('${dn.scope}','${dn.file}','${o.id}')" title="${esc(o.consequence)}">${o.id===dn.recommendation?'★ ':''}${esc(o.label||o.id)}</button>`).join('')}</div>
+      ${dn.reason?`<div class="decreason">recommendation: ${esc(dn.reason)}</div>`:''}
+    </div>`).join('')+`</div>`;
+}
+async function resolveDec(scope,file,choice){
+  const r=await api('/api/decisions/resolve',{scope,file,choice});
+  if(r.error) alert('Could not resolve: '+r.error); else load();
+}
 async function up(e,slug){ e.preventDefault();
   const f=e.target, file=f.querySelector('input[type=file]').files[0];
   if(!file) return false;
@@ -752,7 +850,7 @@ class H(BaseHTTPRequestHandler):
             self._send(json.dumps({"clients": list_clients(), "running": running,
                                    "max": MAX_SCRAPES, "queued": queued,
                                    "archived": archived, "server": IS_SERVER,
-                                   "ttyd_url": TTYD_URL}), "application/json")
+                                   "ttyd_url": TTYD_URL, "decisions": list_open_decisions()}), "application/json")
         elif path == "/api/chat":
             q = parse_qs(urlparse(self.path).query)
             slug = q.get("slug", [""])[0]
@@ -763,6 +861,8 @@ class H(BaseHTTPRequestHandler):
             slug = slugify(parse_qs(urlparse(self.path).query).get("slug", [""])[0])
             self._send(json.dumps({"config": parse_backend_config(CLIENTS / slug),
                                    "running": slug in TASKS}), "application/json")
+        elif path == "/api/decisions":
+            self._send(json.dumps({"decisions": list_open_decisions()}), "application/json")
         else:
             self._send("not found", code=404)
 
@@ -870,6 +970,10 @@ class H(BaseHTTPRequestHandler):
             on = sum(1 for m in cfg["modules"] if m["on"])
             bump(cdir, msg=f"backend-config CONFIRMED -> BINDING v{cfg['version']} ({on}/{len(cfg['modules'])} modules ON)")
             return self._send(json.dumps({"ok": True, "version": cfg["version"]}), "application/json")
+        elif path == "/api/decisions/resolve":
+            scope = d.get("scope", ""); scope = STUDIO_KEY if scope in ("", "studio", STUDIO_KEY) else slugify(scope)
+            ok, msg = resolve_decision(scope, d.get("file", ""), d.get("choice", ""))
+            return self._send(json.dumps({"ok": ok, "error": None if ok else msg, "resolved": msg if ok else None}), "application/json", 200 if ok else 400)
         elif path == "/api/rehearsal":
             slug = slugify(d.get("slug", "")); cdir = CLIENTS / slug
             action = d.get("action", "")

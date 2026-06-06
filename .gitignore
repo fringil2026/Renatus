@@ -13,6 +13,7 @@ __pycache__/
 .claude/audit/
 .claude/.studio-session
 .claude/.studio-chat.jsonl
+.claude/decisions/
 # secrets — never commit (rehearsal or real)
 *.env
 **/secrets/
