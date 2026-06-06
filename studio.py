@@ -43,8 +43,16 @@ if HOST not in ("127.0.0.1", "localhost") and not TOKEN:
 SUBDIRS = ["00-source", "01-baseline", "02-intake/assets", "02-intake/specs",
            "02-intake/edits", "03-site", "04-cutover"]
 LOCK = threading.Lock()
-RUNNING = {}   # slug -> Popen
+RUNNING = {}   # slug -> Popen   (scrape jobs)
 QUEUE = []     # [(slug, domain)]
+
+# Background Claude jobs (advance + chat). ONE Claude task per key at a time; key = slug,
+# or "__studio__" for the unscoped studio chat. claude -p runs from ROOT under the existing
+# settings.local.json allowlist — no bypass flags (out-of-allowlist commands fail visibly).
+CLAUDE_BIN = os.environ.get("CLAUDE_BIN", "claude")
+STUDIO_KEY = "__studio__"
+TASKS = {}            # key -> {kind, label, started, tail[], proc}
+TASK_LOCK = threading.Lock()
 
 NEXT = {
     "queued":           "Queued — waiting for a free scrape slot…",
@@ -172,6 +180,87 @@ def archive_client(slug):
     shutil.move(str(cdir), str(dest))
     return dest.name
 
+def deliverables_blocking(cdir):
+    """Parse 02-intake/deliverables-request.md for BLOCKING rows -> [{id, phase, status, what}]."""
+    f = cdir / "02-intake" / "deliverables-request.md"
+    rows, seen = [], set()
+    if not f.exists(): return rows
+    for ln in f.read_text().splitlines():
+        if "BLOCKING" not in ln: continue
+        m = re.search(r"\bD-2(?:\.\d+){1,2}\b", ln)
+        if not m or m.group(0) in seen: continue
+        did = m.group(0); seen.add(did)
+        ph = re.search(r"\(P(\d)\)", ln)
+        stt = re.search(r"\b(NEEDED|REQUESTED|RECEIVED|VERIFIED)\b", ln)
+        cells = [c.strip() for c in ln.strip().strip("|").split("|")]
+        rows.append({"id": did, "phase": int(ph.group(1)) if ph else None,
+                     "status": stt.group(1) if stt else "NEEDED",
+                     "what": (cells[1][:60] if len(cells) > 1 else did)})
+    return rows
+
+def phase_gate(cdir, n):
+    """(relevant BLOCKING rows for phase n, unmet ones not RECEIVED/VERIFIED)."""
+    rel = [r for r in deliverables_blocking(cdir) if r["phase"] == n]
+    unmet = [r for r in rel if r["status"] not in ("RECEIVED", "VERIFIED")]
+    return rel, unmet
+
+def advance_action(slug, st):
+    """Server-side stage->next-action map. Returns {label, command, enabled, tooltip, desc} or None."""
+    stage = st.get("stage", "")
+    busy = slug in TASKS
+    def mk(label, command, enabled=True, tooltip="", desc=""):
+        if busy:
+            enabled, tooltip = False, "a Claude task is already running for this client"
+        return {"label": label, "command": command, "enabled": enabled, "tooltip": tooltip, "desc": desc}
+    if stage == "baseline-ready":
+        return mk(f"Assemble prototype for {slug}", f"Assemble prototype for {slug}",
+                  desc="Reads the baseline, copies the archetype into 03-site, drafts content, builds, and publishes the preview.")
+    if stage == "prototype":   # P1 done; next is P2, gated on its BLOCKING deliverables
+        rel, unmet = phase_gate(CLIENTS / slug, 2)
+        cmd = f"Implement Phase 2 of the spec in clients/{slug}/02-intake/specs/"
+        if unmet:
+            return mk("Implement Phase 2 (blocked)", cmd, enabled=False,
+                      tooltip="Unmet BLOCKING deliverables: " + "; ".join(f"{u['what']} ({u['id']})" for u in unmet))
+        return mk("Implement Phase 2", cmd, desc="Builds the next spec phase; then verifies and publishes.")
+    if stage == "answers-received":
+        return mk(f"Finish {slug}", f"Finish {slug}",
+                  desc="Applies the owner's answers, replaces DRAFT content, finalizes, builds, and publishes.")
+    if stage == "final":
+        return mk(f"Run cutover prechecks for {slug}", f"Run cutover prechecks for {slug}",
+                  desc="Runs the launch checks and writes reports into 04-cutover/.")
+    return None  # queued/scraping/created/error/awaiting-owner(no real action)/cutover-checked
+
+def run_advance(slug, command):
+    """Run `claude -p <command>` from ROOT in the background. Start/finish lines go to status.json
+    (written only when the claude subprocess is NOT running, to avoid clobbering the file it owns);
+    live snippets stream into the in-memory task tail shown on the dashboard."""
+    cdir = CLIENTS / slug
+    bump(cdir, msg=f'advance started: claude -p "{command}"')   # safe: before spawn
+    try:
+        proc = subprocess.Popen([CLAUDE_BIN, "-p", command], cwd=str(ROOT),
+                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    except Exception as e:
+        bump(cdir, msg=f"advance FAILED to start: {e}")
+        with TASK_LOCK: TASKS.pop(slug, None)
+        return
+    with TASK_LOCK:
+        TASKS[slug] = {"kind": "advance", "label": command, "started": now(), "tail": [], "proc": proc}
+    tail = TASKS[slug]["tail"]
+    for line in proc.stdout:
+        line = line.rstrip()
+        if line:
+            tail.append(line)
+            del tail[:-60]
+    rc = proc.wait()
+    if rc == 0:
+        bump(cdir, msg="advance finished ok")          # safe: claude has exited
+    else:
+        st = read_status(cdir)
+        st["advance_failed"] = True
+        st.setdefault("log", []).append(f"{now()} advance FAILED (exit {rc}) — tail: " + " / ".join(tail[-5:])[:400])
+        write_status(cdir, st)
+    with TASK_LOCK: TASKS.pop(slug, None)
+
 def list_clients():
     out = []
     if not CLIENTS.exists(): return out
@@ -192,6 +281,10 @@ def list_clients():
                     "preview_at": st.get("preview_published_at", ""),
                     "preview_rel": rel_time(st.get("preview_published_at", "")),
                     "preview_behind": bool(st.get("preview_url")) and site_newer_than(d, st.get("preview_published_at", "")),
+                    "advance_failed": st.get("advance_failed", False),
+                    "advance": advance_action(d.name, st),
+                    "busy": d.name in TASKS,
+                    "task_tail": TASKS.get(d.name, {}).get("tail", [])[-6:] if d.name in TASKS else [],
                     "log": st.get("log", [])[-4:]})
     return out
 
@@ -245,6 +338,19 @@ border-left:3px solid var(--amber);padding:.55rem .8rem;margin-top:.7rem}
 .drop input[type=file]{font-size:.7rem;max-width:16rem}
 .drop label{display:flex;gap:.25rem;align-items:center;cursor:pointer}
 .empty{color:var(--muted);font-family:var(--m);font-size:.8rem}
+button.adv{background:transparent;color:var(--amber);border-color:var(--amber2);font-size:.82rem}
+button.adv:hover:not([disabled]){background:var(--amber);color:var(--ink)}
+button.adv[disabled]{color:var(--muted);border-color:var(--line);cursor:not-allowed;opacity:.6}
+.run{font-family:var(--m);font-size:.66rem;color:#7fd18f}
+.tasktail{font-family:var(--m);font-size:.62rem;color:#7fd18f;background:#0a1a10;border-left:3px solid #3a6b4f;
+padding:.5rem .7rem;margin-top:.5rem;white-space:pre-wrap;max-height:9rem;overflow:auto}
+.modal{position:fixed;inset:0;background:rgba(4,9,14,.78);display:flex;align-items:center;justify-content:center;z-index:50}
+.modalbox{background:var(--panel);border:1px solid var(--amber2);padding:1.6rem;max-width:34rem;width:92%}
+.modalbox h3{font-family:var(--d);text-transform:uppercase;color:var(--amber);margin:0 0 .6rem}
+.m-desc{font-size:.85rem}.m-cmd{font-family:var(--m);font-size:.72rem;background:var(--ink);padding:.5rem .7rem;border:1px solid var(--line);word-break:break-word}
+.m-unmet{font-family:var(--m);font-size:.7rem;color:#ff8a8a}
+.m-lab{display:block;font-family:var(--m);font-size:.72rem;color:var(--muted);margin:.8rem 0 .3rem}
+#m-input{width:100%}.m-btns{display:flex;gap:.6rem;margin-top:1rem}
 </style></head><body><div class="wrap">
 <h1>Web Studio</h1><p class="sub">Two human steps · everything else automated</p>
 <p class="stats" id="stats"></p>
@@ -254,15 +360,43 @@ border-left:3px solid var(--amber);padding:.55rem .8rem;margin-top:.7rem}
 <input class="grow" name="name" placeholder="Client name (optional)">
 <button>Start pipeline</button></form></div>
 <div id="list"><p class="empty">Loading…</p></div>
-</div><script>
+</div>
+<div id="modal" class="modal" style="display:none"><div class="modalbox">
+  <h3 id="m-title"></h3>
+  <p id="m-desc" class="m-desc"></p>
+  <p id="m-cmd" class="m-cmd"></p>
+  <div id="m-unmet" class="m-unmet"></div>
+  <label class="m-lab">Type the client slug to confirm: <b id="m-slug"></b></label>
+  <input id="m-input" placeholder="slug" autocomplete="off">
+  <div class="m-btns"><button id="m-run">Run</button><button class="ghost" onclick="closeModal()">Cancel</button></div>
+</div></div>
+<script>
 async function api(path, body){
   const r = await fetch(path, body ? {method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify(body)} : undefined);
   if(r.status===401){ document.body.innerHTML='<p style="font-family:monospace;color:#ffb000;padding:2rem">401 — reopen with ?key=&lt;token&gt;</p>'; throw 0; }
   return r.json();
 }
+let DATA = {clients:[]};
+function findC(slug){ return DATA.clients.find(x=>x.slug===slug); }
+function cpCmd(slug){ const c=findC(slug); if(c&&c.advance) cp('claude -p "'+c.advance.command+'"'); }
+function closeModal(){ document.getElementById('modal').style.display='none'; }
+function openAdvance(slug){
+  const c=findC(slug); if(!c||!c.advance||!c.advance.enabled) return;
+  document.getElementById('m-title').textContent=c.advance.label;
+  document.getElementById('m-desc').textContent=c.advance.desc||'';
+  document.getElementById('m-cmd').textContent='claude -p "'+c.advance.command+'"';
+  document.getElementById('m-unmet').textContent=c.advance.tooltip||'';
+  document.getElementById('m-slug').textContent=slug;
+  const inp=document.getElementById('m-input'); inp.value='';
+  document.getElementById('m-run').onclick=async()=>{
+    const r=await api('/api/advance',{slug,confirm:inp.value.trim()});
+    if(r.error){ alert('Cannot run: '+r.error); } else { closeModal(); load(); }
+  };
+  document.getElementById('modal').style.display='flex'; inp.focus();
+}
 async function load(){
-  const d = await api('/api/clients');
+  const d = await api('/api/clients'); DATA = d;
   document.getElementById('stats').textContent =
     `active scrapes ${d.running}/${d.max} · queued ${d.queued} · archived projects ${d.archived}`;
   const el = document.getElementById('list');
@@ -270,11 +404,15 @@ async function load(){
   el.innerHTML = d.clients.map(c=>`<div class="row${c.done?' fin':''}">
     <div class="top"><div><span class="nm">${c.name}</span> <span class="dom">${c.domain}</span></div>
     <div class="btns"><span class="chip">${c.stage}</span>
-      ${d.server?(d.ttyd_url?`<a class="ghost" href="${d.ttyd_url}" target="_blank" rel="noopener">Open session ↗</a>`:''):`<button class="ghost" onclick="api('/open',{slug:'${c.slug}'})">Open session</button>`}
+      ${c.busy?'<span class="run">● running…</span>':''}
+      ${c.advance?`<button class="adv" ${c.advance.enabled?'':'disabled'} title="${(c.advance.tooltip||c.advance.desc||'').replace(/"/g,'&quot;')}" onclick="openAdvance('${c.slug}')">${c.advance.label}</button><span class="copy" title="Copy terminal command" onclick="cpCmd('${c.slug}')">⧉</span>`:''}
+      ${d.server?(d.ttyd_url?`<a class="ghost" href="${d.ttyd_url}" target="_blank" rel="noopener">Open session ↗</a>`:''):`<button class="ghost" onclick="api('/open',{slug:'${c.slug}'})">Claude: ${c.name}</button>`}
       ${c.rerun?`<button class="ghost" onclick="act('/rerun','${c.slug}')">Rerun</button>`:''}
       <button class="${c.done?'done':'ghost'}" onclick="if(confirm('Archive ${c.slug}? Moves it to archive/ and clears this row.'))act('/archive','${c.slug}')">Archive</button>
     </div></div>
     <div class="next">${c.next}</div>
+    ${c.busy&&c.task_tail.length?`<div class="tasktail">${c.task_tail.map(t=>t.replace(/[<>]/g,'')).join('\\n')}</div>`:''}
+    ${c.advance_failed&&!c.busy?`<div class="prev"><span class="stale">⚠ advance failed — see log</span></div>`:''}
     ${c.production_url?`<div class="prev"><a class="live" href="${c.production_url}" target="_blank" rel="noopener">Live ↗</a> <span class="copy" title="Copy URL" onclick="cp('${c.production_url}')">⧉</span> <span class="purl">${c.production_url}</span></div>`:''}
     ${c.preview_url?`<div class="prev"><a class="pvw" href="${c.preview_url}" target="_blank" rel="noopener">Preview ↗</a> <span class="copy" title="Copy URL" onclick="cp('${c.preview_url}')">⧉</span> <span class="pdate">${c.preview_rel||c.preview_at}</span>${c.preview_stale?' <span class="stale">⚠ last deploy failed</span>':(c.preview_behind?' <span class="stale">⚠ preview behind latest edits</span>':'')}</div>`:''}
     <form class="drop" onsubmit="return up(event,'${c.slug}')">
@@ -380,6 +518,22 @@ class H(BaseHTTPRequestHandler):
             target.write_text(content)
             bump(cdir, msg=f"uploaded {dest}/{fname} ({len(content)} chars) via dashboard")
             return self._send(json.dumps({"ok": True, "path": f"02-intake/{dest}/{fname}"}), "application/json")
+        elif path == "/api/advance":
+            slug = slugify(d.get("slug", ""))
+            cdir = CLIENTS / slug
+            if not cdir.exists():
+                return self._send(json.dumps({"error": "no such client"}), "application/json", 404)
+            act = advance_action(slug, read_status(cdir))   # revalidate server-side
+            if not act or not act.get("enabled"):
+                return self._send(json.dumps({"error": act.get("tooltip") if act else "nothing to advance"}), "application/json", 400)
+            if d.get("confirm", "") != slug:
+                return self._send(json.dumps({"error": "type the slug exactly to confirm"}), "application/json", 400)
+            with TASK_LOCK:
+                if slug in TASKS:
+                    return self._send(json.dumps({"error": "a Claude task is already running for this client"}), "application/json", 409)
+                TASKS[slug] = {"kind": "advance", "label": act["command"], "started": now(), "tail": [], "proc": None}
+            threading.Thread(target=run_advance, args=(slug, act["command"]), daemon=True).start()
+            return self._send(json.dumps({"ok": True}), "application/json")
         elif path == "/archive":
             archive_client(slugify(d.get("slug", "")))
         elif path == "/rerun":
