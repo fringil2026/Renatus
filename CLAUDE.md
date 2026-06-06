@@ -45,6 +45,22 @@ Trigger: status.stage == baseline-ready (dashboard tells the human when).
     reconstruction (above). A table: source block (page + brief identifier) → purpose
     designation → target component (existing or new) → improvement made. It proves every block
     of the original was UNDERSTOOD, not transcribed. (Refreshed at "Finish" too.)
+11. Generate `02-intake/production-roadmap.md` — a CLIENT-FACING, plain-language description of
+    everything the complete product includes that the prototype doesn't yet do. Rules:
+    - SOURCES, merged: the binding spec's phased features (checkout, owner admin, back-in-stock
+      email…); the feature census STUB+FLAG list (EVERY stub in the prototype MUST appear here,
+      honestly labelled — "the notify-me button you see is a preview; it goes live in the complete
+      build"); and the playbook's Tier 2/3 features marked clearly as "optional later additions,"
+      not promises.
+    - Each entry: feature name → one sentence on what it does FOR THE CLIENT'S BUSINESS (no
+      jargon, no phase numbers, no stack names like Supabase) → one line on what unblocks it,
+      cross-referenced to the deliverables request ("available once we have your Stripe account —
+      item D-2.7.1").
+    - Two sections: "Included in your complete site" and "Optional additions we'd recommend down
+      the road." Tone: confident, concrete, honest — sets client expectations, so nothing
+      speculative is stated as certain.
+    - Living, like the deliverables file: as facts arrive and features go live, entries move to a
+      short "Now live" list at the top; rows never silently vanish.
 
 ## Command 2 — "Finish <slug>"
 Trigger: 02-intake/owner-answers.txt exists (stage answers-received).
