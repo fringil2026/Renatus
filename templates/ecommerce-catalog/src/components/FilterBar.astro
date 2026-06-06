@@ -8,6 +8,15 @@ const generaList = genera();
 ---
 <div class="border-y border-line bg-paper-2/60 paper-grain">
   <div class="mx-auto flex max-w-[75rem] flex-wrap items-center gap-x-6 gap-y-3 px-5 py-3.5" data-filterbar>
+    <label class="flex items-center gap-2 text-sm">
+      <span class="sr-only">Search orchids</span>
+      <input
+        type="search"
+        data-search
+        placeholder="Search orchids…"
+        class="w-44 border border-line bg-paper px-2.5 py-1 text-sm text-ink placeholder:text-moss focus:w-56 transition-[width]"
+      />
+    </label>
     <div class="flex flex-wrap items-center gap-1.5" role="group" aria-label="Filter by genus">
       <button type="button" data-genus="all" class="genus-chip is-active mono-label border border-line px-2.5 py-1 hover:border-conservatory">All</button>
       {generaList.map((g) => (
@@ -36,7 +45,7 @@ const generaList = genera();
   const bar = document.querySelector("[data-filterbar]");
   if (bar) {
     const cards = Array.from(document.querySelectorAll<HTMLElement>("[data-card]"));
-    const state = { genus: "all", difficulty: "all", bloom: false };
+    const state = { genus: "all", difficulty: "all", bloom: false, q: "" };
     const empty = document.querySelector<HTMLElement>("[data-empty]");
 
     function apply() {
@@ -45,7 +54,8 @@ const generaList = genera();
         const okG = state.genus === "all" || c.dataset.genus === state.genus;
         const okD = state.difficulty === "all" || c.dataset.difficulty === state.difficulty;
         const okB = !state.bloom || c.dataset.bloom === "true";
-        const show = okG && okD && okB;
+        const okQ = !state.q || (c.dataset.search || "").includes(state.q);
+        const show = okG && okD && okB && okQ;
         c.hidden = !show;
         if (show) shown++;
       }
@@ -66,6 +76,10 @@ const generaList = genera();
     });
     bar.querySelector<HTMLInputElement>("[data-bloom]")?.addEventListener("change", (e) => {
       state.bloom = (e.target as HTMLInputElement).checked;
+      apply();
+    });
+    bar.querySelector<HTMLInputElement>("[data-search]")?.addEventListener("input", (e) => {
+      state.q = (e.target as HTMLInputElement).value.trim().toLowerCase();
       apply();
     });
   }

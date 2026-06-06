@@ -1,0 +1,25 @@
+---
+import Base from "../../layouts/Base.astro";
+import { SITE } from "../../config/site";
+import { careGuides } from "../../lib/care";
+const guides = careGuides();
+---
+<Base title={`Orchid care guides — ${SITE.name}`} description="How to grow every genus we sell: light, water, temperature, and difficulty, by genus.">
+  <section class="mx-auto max-w-[75rem] px-5 pt-10 pb-4">
+    <p class="eyebrow eyebrow--leaf">Care guides</p>
+    <h1 class="latin mt-1 text-4xl text-ink">How to grow what we sell</h1>
+    <p class="mt-2 max-w-2xl text-ink/75">One guide per genus in the catalogue — light, water, temperature, and how hard it is to grow. Something the old site never offered.</p>
+  </section>
+  <section class="mx-auto max-w-[75rem] px-5 py-8">
+    <div class="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+      {guides.map((g) => (
+        <a href={`/care/${g.slug}/`} class="lift botanical-rule block border border-line bg-paper p-5 pt-4">
+          <h2 class="latin text-2xl text-ink">{g.genus}</h2>
+          <p class="mono-label mt-1">{g.count} in catalogue · {g.temps.join("/")}-growing</p>
+          <p class="mt-3 text-sm text-ink/75">Light, water, temperature &amp; difficulty for growing {g.genus}.</p>
+          <span class="mt-3 inline-block text-sm text-conservatory">Read the {g.genus} guide →</span>
+        </a>
+      ))}
+    </div>
+  </section>
+</Base>

@@ -33,6 +33,7 @@ const crumbs = breadcrumbSchema([
           data-difficulty={p.difficulty}
           data-bloom={String(p.bloom_now && p.stock_qty > 0)}
           data-stock={String(p.stock_qty > 0)}
+          data-search={`${p.genus} ${p.species} ${p.common_name} ${p.origin}`.toLowerCase()}
         >
           <SpecimenCard product={p} plateNo={i + 1} />
         </div>

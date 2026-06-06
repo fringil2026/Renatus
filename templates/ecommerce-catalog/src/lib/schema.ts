@@ -37,6 +37,18 @@ export function productSchema(p: Product, siteOrigin: string, pageUrl: string) {
   };
 }
 
+export function faqSchema(qa: Array<{ q: string; a: string }>) {
+  return {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    mainEntity: qa.map((item) => ({
+      "@type": "Question",
+      name: item.q,
+      acceptedAnswer: { "@type": "Answer", text: item.a },
+    })),
+  };
+}
+
 export function breadcrumbSchema(crumbs: Array<{ name: string; url: string }>) {
   return {
     "@context": "https://schema.org",
