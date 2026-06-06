@@ -261,6 +261,79 @@ def run_advance(slug, command):
         write_status(cdir, st)
     with TASK_LOCK: TASKS.pop(slug, None)
 
+def chat_paths(key):
+    """(transcript jsonl, session-id file) for a chat key (slug, or STUDIO_KEY)."""
+    if key == STUDIO_KEY:
+        return ROOT / ".claude" / ".studio-chat.jsonl", ROOT / ".claude" / ".studio-session"
+    cdir = CLIENTS / key
+    return cdir / ".claude-chat.jsonl", cdir / ".claude-session"
+
+def append_chat(key, entry):
+    f, _ = chat_paths(key)
+    f.parent.mkdir(parents=True, exist_ok=True)
+    with open(f, "a") as fh:
+        fh.write(json.dumps(entry) + "\n")
+
+def read_chat(key):
+    f, _ = chat_paths(key)
+    if not f.exists(): return []
+    out = []
+    for ln in f.read_text().splitlines():
+        try: out.append(json.loads(ln))
+        except Exception: pass
+    return out
+
+def run_chat(key, message):
+    """Background `claude -p` chat turn. stream-json is used (superset of json) so tool actions
+    can be summarized; session_id is captured to .claude-session and --resume keeps continuity."""
+    scoped = None if key == STUDIO_KEY else key
+    _, sess_file = chat_paths(key)
+    preamble = "" if scoped is None else (
+        f"[Dashboard message for client {scoped} — work only within clients/{scoped}/ "
+        f"unless explicitly told otherwise]\n")
+    sess = sess_file.read_text().strip() if sess_file.exists() else ""
+    cmd = [CLAUDE_BIN, "-p", preamble + message, "--output-format", "stream-json", "--verbose"]
+    if sess:
+        cmd += ["--resume", sess]
+    try:
+        proc = subprocess.Popen(cmd, cwd=str(ROOT), stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE, text=True)
+    except Exception as e:
+        append_chat(key, {"role": "error", "text": f"failed to start claude: {e}", "at": now()})
+        with TASK_LOCK: TASKS.pop(key, None)
+        return
+    with TASK_LOCK:
+        TASKS[key] = {"kind": "chat", "label": message[:60], "started": now(), "tail": [], "proc": proc}
+    reply, tools, new_sess = [], [], ""
+    for line in proc.stdout:
+        line = line.strip()
+        if not line: continue
+        try: ev = json.loads(line)
+        except Exception: continue
+        t = ev.get("type")
+        if ev.get("session_id"): new_sess = ev["session_id"]
+        if t == "assistant":
+            for blk in ev.get("message", {}).get("content", []):
+                if blk.get("type") == "text" and blk.get("text", "").strip():
+                    reply.append(blk["text"])
+                elif blk.get("type") == "tool_use":
+                    inp = blk.get("input", {}) or {}
+                    d = inp.get("file_path") or inp.get("command") or inp.get("path") or inp.get("pattern") or ""
+                    tools.append(f"{blk.get('name')}: {str(d)[:80]}".strip())
+        elif t == "result" and ev.get("result") and not reply:
+            reply.append(ev["result"])
+    rc = proc.wait()
+    err = (proc.stderr.read() or "")[-600:] if proc.stderr else ""
+    if new_sess:
+        sess_file.write_text(new_sess)
+    if rc == 0:
+        append_chat(key, {"role": "assistant", "text": ("\n".join(reply)[:6000] or "(no text reply)"),
+                          "tools": tools[:30], "at": now()})
+    else:
+        append_chat(key, {"role": "error", "text": f"claude exited {rc}\n{err}".strip(),
+                          "tools": tools[:30], "at": now()})
+    with TASK_LOCK: TASKS.pop(key, None)
+
 def list_clients():
     out = []
     if not CLIENTS.exists(): return out
@@ -351,6 +424,17 @@ padding:.5rem .7rem;margin-top:.5rem;white-space:pre-wrap;max-height:9rem;overfl
 .m-unmet{font-family:var(--m);font-size:.7rem;color:#ff8a8a}
 .m-lab{display:block;font-family:var(--m);font-size:.72rem;color:var(--muted);margin:.8rem 0 .3rem}
 #m-input{width:100%}.m-btns{display:flex;gap:.6rem;margin-top:1rem}
+.chatpanel{margin-top:.7rem;border:1px solid var(--line);background:var(--panel2);padding:.7rem}
+.chatlog{max-height:18rem;overflow:auto;display:flex;flex-direction:column;gap:.5rem;margin-bottom:.6rem}
+.msg{font-size:.8rem;padding:.45rem .6rem;border-radius:3px;white-space:pre-wrap;word-break:break-word}
+.msg.user{background:#13283c;border-left:3px solid var(--amber)}
+.msg.assistant{background:#0e1f17;border-left:3px solid #3a6b4f}
+.msg.error{background:#2a1414;border-left:3px solid #ff5d5d;color:#ffb3b3}
+.msg .who{font-family:var(--m);font-size:.58rem;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:.2rem}
+.msg .tools{font-family:var(--m);font-size:.6rem;color:#7fae8f;margin-top:.35rem}
+.chatform{display:flex;gap:.5rem}.chatform textarea{flex:1;min-height:3.2rem}
+.chatform button{align-self:flex-end}
+.chatrun{font-family:var(--m);font-size:.62rem;color:#7fd18f;margin-bottom:.4rem}
 </style></head><body><div class="wrap">
 <h1>Web Studio</h1><p class="sub">Two human steps · everything else automated</p>
 <p class="stats" id="stats"></p>
@@ -358,7 +442,17 @@ padding:.5rem .7rem;margin-top:.5rem;white-space:pre-wrap;max-height:9rem;overfl
 <form class="new" onsubmit="return newClient(event)">
 <input class="grow" name="domain" placeholder="https://example-client.com" required>
 <input class="grow" name="name" placeholder="Client name (optional)">
-<button>Start pipeline</button></form></div>
+<button>Start pipeline</button></form>
+<div style="margin-top:.9rem">
+  <button class="ghost" onclick="openSession('studio')">Claude: Studio (terminal)</button>
+  <button class="ghost" onclick="toggleChat('studio')">Studio chat ▾</button>
+</div>
+<div id="chat-studio" class="chatpanel" style="display:none">
+  <div class="chatlog" id="chatlog-studio"></div>
+  <form class="chatform" onsubmit="return sendChat(event,'studio')">
+    <textarea id="cin-studio" placeholder="Message Claude (studio-wide, unscoped)…" required></textarea>
+    <button>Send</button></form>
+</div></div>
 <div id="list"><p class="empty">Loading…</p></div>
 </div>
 <div id="modal" class="modal" style="display:none"><div class="modalbox">
@@ -378,7 +472,30 @@ async function api(path, body){
   return r.json();
 }
 let DATA = {clients:[]};
+const chatOpen = new Set();      // chat keys currently expanded
+const chatDraft = {};            // key -> unsent textarea text (preserved across refreshes)
+function esc(s){ return (s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
 function findC(slug){ return DATA.clients.find(x=>x.slug===slug); }
+async function openSession(key){ await api('/open',{slug:key==='studio'?'':key, studio:key==='studio'}); }
+function saveDrafts(){ chatOpen.forEach(k=>{ const t=document.getElementById('cin-'+k); if(t) chatDraft[k]=t.value; }); }
+function restoreChats(){ chatOpen.forEach(k=>{ const p=document.getElementById('chat-'+k); if(p){ p.style.display='block';
+  const t=document.getElementById('cin-'+k); if(t&&chatDraft[k]!==undefined) t.value=chatDraft[k]; renderChat(k);} }); }
+function toggleChat(key){ const p=document.getElementById('chat-'+key); if(!p) return;
+  if(chatOpen.has(key)){ chatOpen.delete(key); p.style.display='none'; }
+  else { chatOpen.add(key); p.style.display='block'; renderChat(key); } }
+async function renderChat(key){
+  const log=document.getElementById('chatlog-'+key); if(!log) return;
+  const r=await api('/api/chat?slug='+encodeURIComponent(key));
+  log.innerHTML=(r.running?'<div class="chatrun">● Claude is working…</div>':'')
+    + r.messages.map(m=>`<div class="msg ${m.role}"><span class="who">${m.role}</span>${esc(m.text)}`
+      +((m.tools&&m.tools.length)?`<div class="tools">↳ ${m.tools.map(esc).join('<br>↳ ')}</div>`:'')+`</div>`).join('');
+  log.scrollTop=log.scrollHeight;
+}
+async function sendChat(e,key){ e.preventDefault();
+  const t=document.getElementById('cin-'+key); const msg=t.value.trim(); if(!msg) return false;
+  const r=await api('/api/chat',{slug:key,message:msg});
+  if(r.error){ alert('Chat: '+r.error); return false; }
+  t.value=''; chatDraft[key]=''; renderChat(key); return false; }
 function cpCmd(slug){ const c=findC(slug); if(c&&c.advance) cp('claude -p "'+c.advance.command+'"'); }
 function closeModal(){ document.getElementById('modal').style.display='none'; }
 function openAdvance(slug){
@@ -396,6 +513,7 @@ function openAdvance(slug){
   document.getElementById('modal').style.display='flex'; inp.focus();
 }
 async function load(){
+  saveDrafts();
   const d = await api('/api/clients'); DATA = d;
   document.getElementById('stats').textContent =
     `active scrapes ${d.running}/${d.max} · queued ${d.queued} · archived projects ${d.archived}`;
@@ -420,11 +538,19 @@ async function load(){
       <label><input type="radio" name="dest-${c.slug}" value="specs" checked> specs</label>
       <label><input type="radio" name="dest-${c.slug}" value="edits"> edits</label>
       <button class="ghost">Upload .md</button>
+      <button type="button" class="ghost" onclick="toggleChat('${c.slug}')">Chat ▾</button>
     </form>
+    <div id="chat-${c.slug}" class="chatpanel" style="display:none">
+      <div class="chatlog" id="chatlog-${c.slug}"></div>
+      <form class="chatform" onsubmit="return sendChat(event,'${c.slug}')">
+        <textarea id="cin-${c.slug}" placeholder="Message Claude about ${c.name} (scoped to clients/${c.slug}/)…" required></textarea>
+        <button>Send</button></form>
+    </div>
     ${c.paste?`<form class="paste" onsubmit="return answers(event,'${c.slug}')">
       <textarea placeholder="Step 2 — paste the owner's questionnaire summary here…"></textarea>
       <button>Save owner answers</button></form>`:''}
     <div class="log">${c.log.join('\\n')}</div></div>`).join('');
+  restoreChats();
 }
 async function newClient(e){ e.preventDefault();
   const f = e.target;
@@ -480,6 +606,12 @@ class H(BaseHTTPRequestHandler):
                                    "max": MAX_SCRAPES, "queued": queued,
                                    "archived": archived, "server": IS_SERVER,
                                    "ttyd_url": TTYD_URL}), "application/json")
+        elif path == "/api/chat":
+            q = parse_qs(urlparse(self.path).query)
+            slug = q.get("slug", [""])[0]
+            key = STUDIO_KEY if slug in ("", "studio") else slugify(slug)
+            self._send(json.dumps({"messages": read_chat(key), "running": key in TASKS}),
+                       "application/json")
         else:
             self._send("not found", code=404)
 
@@ -533,6 +665,21 @@ class H(BaseHTTPRequestHandler):
                     return self._send(json.dumps({"error": "a Claude task is already running for this client"}), "application/json", 409)
                 TASKS[slug] = {"kind": "advance", "label": act["command"], "started": now(), "tail": [], "proc": None}
             threading.Thread(target=run_advance, args=(slug, act["command"]), daemon=True).start()
+            return self._send(json.dumps({"ok": True}), "application/json")
+        elif path == "/api/chat":
+            slug = d.get("slug", "")
+            key = STUDIO_KEY if slug in ("", "studio") else slugify(slug)
+            msg = (d.get("message", "") or "").strip()
+            if key != STUDIO_KEY and not (CLIENTS / key).exists():
+                return self._send(json.dumps({"error": "no such client"}), "application/json", 404)
+            if not msg:
+                return self._send(json.dumps({"error": "empty message"}), "application/json", 400)
+            with TASK_LOCK:
+                if key in TASKS:
+                    return self._send(json.dumps({"error": "a Claude task is already running here"}), "application/json", 409)
+                TASKS[key] = {"kind": "chat", "label": msg[:60], "started": now(), "tail": [], "proc": None}
+            append_chat(key, {"role": "user", "text": msg, "at": now()})
+            threading.Thread(target=run_chat, args=(key, msg), daemon=True).start()
             return self._send(json.dumps({"ok": True}), "application/json")
         elif path == "/archive":
             archive_client(slugify(d.get("slug", "")))
