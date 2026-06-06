@@ -9,32 +9,24 @@ interface Props { product: Product; }
 const { product } = Astro.props;
 const href = `/shop/${product.slug}/`;
 ---
+<!-- Herbarium v2 hero: photo-forward, quiet. The photo gets the largest honest area; type stays
+     out of its way. Slot is built to accept large imagery — D-2.7.4 originals fill it with no
+     layout change (and a real ≥1600px shot can go full-bleed later). -->
 <section class="bg-conservatory text-paper">
-  <div class="mx-auto grid max-w-[75rem] items-stretch gap-0 px-5 py-10 md:grid-cols-2 md:gap-10 md:py-14">
-    <div class="order-2 flex flex-col justify-center md:order-1">
-      <p class="eyebrow">Specimen of the Week</p>
-      <h1 class="latin mt-3 text-5xl leading-[1.02] text-paper md:text-6xl">{latin(product)}</h1>
-      <p class="mt-2 text-lg text-paper/85">{product.common_name}</p>
-      <p class="mono-label mt-3 !text-paper/55">{product.origin}</p>
-      <p class="mt-5 max-w-md text-paper/80">{product.description}</p>
-      <div class="mt-7 flex items-center gap-5">
-        <a href={href} class="bg-petal px-5 py-2.5 text-sm tracking-wide text-paper hover:bg-paper hover:text-conservatory transition-colors">
-          View care &amp; price
-        </a>
+  <div class="mx-auto grid max-w-[78rem] items-center gap-8 px-5 py-12 md:grid-cols-[1.1fr_1fr] md:gap-14 md:py-16">
+    <div class="order-1">
+      <SpecimenPhoto product={product} class="aspect-[4/5] w-full" />
+    </div>
+    <div class="order-2 flex flex-col justify-center">
+      <p class="eyebrow">Specimen of the week</p>
+      <h1 class="latin mt-4 text-6xl leading-[1.0] text-paper md:text-7xl">{latin(product)}</h1>
+      <p class="mt-3 text-lg text-paper/85">{product.common_name}</p>
+      <p class="mono-label mt-2 !text-paper/55">{product.origin}</p>
+      <p class="mt-6 max-w-md text-paper/75">{product.description}</p>
+      <div class="mt-8 flex items-center gap-5">
+        <a href={href} class="bg-petal px-6 py-3 text-sm tracking-wide text-paper hover:bg-paper hover:text-conservatory transition-colors">View &amp; buy</a>
         <span class="text-paper/80">{priceLabel(product)}</span>
       </div>
-    </div>
-    <div class="order-1 mb-8 md:order-2 md:mb-0">
-      <!-- Art-directed specimen plate: paper mat + ruled frame + plate caption. Kept
-           CONTAINED (not stretched full-bleed) — the source photo is < 1600px, so a
-           full-bleed hero would upscale; flagged for original photography (D-2.7.4). -->
-      <figure class="specimen-mat border border-line-dark shadow-[0_18px_40px_-22px_rgba(0,0,0,0.6)]">
-        <SpecimenPhoto product={product} plateNo={1} class="aspect-[4/5] w-full" />
-        <figcaption class="mt-2 flex items-baseline justify-between px-0.5">
-          <span class="latin text-lg text-ink">{latin(product)}</span>
-          <span class="plate-no">Specimen of the week</span>
-        </figcaption>
-      </figure>
     </div>
   </div>
 </section>

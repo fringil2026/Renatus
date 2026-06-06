@@ -56,32 +56,19 @@ body {
 .botanical-rule { border-top: 1px solid var(--color-line); }
 .botanical-rule--green { border-top-color: var(--color-line-dark); }
 
-/* Herbarium tag — the ruled label block under a specimen photo */
-.specimen-tag {
-  border-top: 1px solid var(--color-line);
-  background:
-    repeating-linear-gradient(
-      to bottom,
-      transparent 0,
-      transparent 1.45rem,
-      var(--color-line) 1.45rem,
-      var(--color-line) calc(1.45rem + 1px)
-    );
-}
+/* HERBARIUM v2 (concept evolution): cleaner + quieter + photo-forward. The ruled herbarium tag
+   is now a single hairline; paper-grain and photo-corner mounts are retired as noise. Identity
+   that STAYS = italic Latin display type, conservatory green, plate numbering. */
+.specimen-tag { border-top: 1px solid var(--color-line); }
 
-/* Out-of-stock photo: desaturate 30% per spec */
-.oos-photo { filter: grayscale(0.85) saturate(0.55) brightness(0.97); }
+/* Out-of-stock photo: gently desaturated */
+.oos-photo { filter: grayscale(0.7) saturate(0.6); }
 
-/* SIGNATURE ELEMENT — the herbarium specimen plate: photo seated on a paper mat with
-   pressed photo-corner mounts, one consistent treatment across the whole site. */
-.specimen-mat { background: var(--color-paper); padding: 0.55rem; }
-.mount-corner { position: absolute; width: 13px; height: 13px; border: 1.5px solid var(--color-moss); opacity: 0.55; }
-.mount-corner.tl { top: 6px; left: 6px; border-right: 0; border-bottom: 0; }
-.mount-corner.tr { top: 6px; right: 6px; border-left: 0; border-bottom: 0; }
-.mount-corner.bl { bottom: 6px; left: 6px; border-right: 0; border-top: 0; }
-.mount-corner.br { bottom: 6px; right: 6px; border-left: 0; border-top: 0; }
-/* one warm color treatment for every specimen image */
-.specimen-img { filter: saturate(1.03) contrast(1.02); }
+/* Photo treatment — one consistent, restrained look; photos are the loudest element. */
+.specimen-img { filter: saturate(1.02); }
+/* Retired ornaments kept as no-ops so any lingering reference renders quietly. */
+.specimen-mat { background: transparent; }
+.mount-corner { display: none; }
 
 /* "IN CULTIVATION" stamp on out-of-stock plates */
 .in-culture {
@@ -117,11 +104,8 @@ body {
 .lift:hover { transform: translateY(-2px); box-shadow: 0 8px 22px -14px rgba(34, 37, 31, 0.45); }
 @media (prefers-reduced-motion: reduce) { .lift { transition: none; } .lift:hover { transform: none; } }
 
-/* Paper grain on light sections (subtle) */
-.paper-grain {
-  background-image: radial-gradient(rgba(34, 37, 31, 0.035) 1px, transparent 1px);
-  background-size: 4px 4px;
-}
+/* Paper grain retired (Herbarium v2 — quieter surfaces). Kept as a no-op. */
+.paper-grain { background-image: none; }
 
 /* Eyebrow label */
 .eyebrow {

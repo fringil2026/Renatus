@@ -65,6 +65,19 @@ ONLY accent. Type: Cormorant Garamond (display, italic for Latin binomials) · P
 (body) · IBM Plex Mono (labels/SKU/origin). Microdetails: thin botanical rules, plate
 numbers ("Pl. 12"), hover lifts a card 2px. No parallax — neat and precise.
 
+## Concept evolution — "Herbarium v2" (cleaner + photo-forward)
+The Living Herbarium evolved toward a quieter, photo-forward expression: significantly more
+whitespace, simplified cards (the ruled herbarium tag is a single hairline; paper-grain and
+photo-corner mounts retired as noise), lighter chrome, fewer simultaneous visual ideas per screen.
+The IDENTITY is unchanged and non-negotiable — **italic Latin display type, conservatory green, and
+plate numbering ARE the brand**; the ornament around them was negotiable and got dialled back.
+Photo-forward rule: on any surface with a photo, the photo is the largest honest element; real
+photos display at their native-resolution ceiling (NEVER upscaled); no-photo products get clean
+type-led cards (a big italic binomial), never fake plates. All photo slots are built to accept
+large imagery so D-2.7.4 originals scale to full photographic immersion with zero layout rework.
+Reference for FEEL only (never copied): the restraint of photography-led catalog sites — few
+colours per screen, the photo doing the talking, type staying out of the way.
+
 ## Brand-moment design ambition — binding for every client built from THIS archetype
 Commerce is a feeling before it is a transaction. Every client built from ecommerce-catalog MUST
 deliver a memorable BRAND MOMENT — a beat a visitor would remember tomorrow. This raises the bar
