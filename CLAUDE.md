@@ -71,6 +71,17 @@ When the human describes a change conversationally ("make the hero bigger, add a
 FAQ"), do NOT just do it: first author the edit file from the template (next NNN, PENDING),
 SHOW it to the human, then process it. The record must always exist before the change does.
 
+## Command 6 — "Publish preview for <slug>"
+Deploy the current `03-site` build as a PRIVATE preview for owner review.
+1. Build with noindex ON — previews NEVER get `PUBLIC_INDEXABLE` (so `npm run build`,
+   never the production flag). The staging noindex meta must be present in the output.
+2. Deploy `03-site/dist/` to Cloudflare Pages via wrangler as project `ws-<slug>`:
+   `wrangler pages deploy 03-site/dist --project-name ws-<slug>`.
+3. Report the public `*.pages.dev` URL.
+First run only: wrangler isn't set up. Do NOT fail — walk the human through the one-time
+setup (`npm i -g wrangler` then `wrangler login`, which opens a browser), then continue.
+This is a preview, not a launch: no DNS, no custom domain, no MX/email changes.
+
 ## Build specs (binding build orders)
 Any `.md` file in a client's `02-intake/specs/` is a BINDING build order, not a
 suggestion. When assembling a prototype or finishing a client, read every spec in
@@ -104,4 +115,9 @@ archive the log to `.claude/audit/<YYYY-MM-DD>-<task-slug>.log` and start a fres
 - Staging builds keep noindex; only PUBLIC_INDEXABLE=true removes it (launch step zero, human-confirmed).
 - Reuse the client's EXISTING GA4 property; issue NEW Turnstile/reCAPTCHA keys per rebuild.
 - Scraped copy is DRAFT until the owner's answers or explicit human review confirm ownership (license risk).
+- Images (OVERRIDES the earlier "never ship scraped imagery" rule): PROTOTYPES MAY use
+  images scraped from the client's OWN website (it is their material, shown back to them).
+  Protection moves to PRODUCTION: at "Finish <slug>", every image must be client-supplied or
+  have provenance confirmed via intake — any image that isn't gets flagged FOR REVIEW and
+  replaced before launch. Never use third-party/stock imagery scraped from elsewhere.
 - All colors/fonts via @theme tokens; no literal hex in components.

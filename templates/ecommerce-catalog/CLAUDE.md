@@ -43,8 +43,10 @@ JSON-LD builders: `src/lib/schema.ts`. Client facts: `src/config/site.ts`. Token
 in `src/styles/global.css` (mirror `tokens.json`).
 
 ## Hard rules — never violate
-- NEVER ship scraped or stock product imagery. Licensed originals only; until they exist,
-  `SpecimenPhoto` draws a labelled placeholder. The hero photo is Andy's original work only.
+- Imagery follows the studio rule: a PROTOTYPE may use images scraped from the client's OWN
+  site; PRODUCTION ("Finish") requires every image client-supplied or provenance-confirmed,
+  else FOR REVIEW + replaced. Never use third-party/stock imagery. `SpecimenPhoto` shows the
+  real photo when `product.photos` is set, and a labelled placeholder when it isn't.
 - NEVER remove the `INDEXABLE` / `noindex` logic in BaseHead.astro.
 - NEVER delete the JSON-LD blocks (Store, Product, Breadcrumb). Update their data instead.
 - Prices are ALWAYS server-verified from the DB at checkout — never trust client-supplied

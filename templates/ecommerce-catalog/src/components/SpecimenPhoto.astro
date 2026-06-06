@@ -1,8 +1,8 @@
 ---
-// Phase 1 placeholder plate. NO scraped or stock imagery ships (Hard rule +
-// spec: licensed originals only). When product.photos is populated in a later
-// phase this component renders the real <img>; until then it draws a labelled
-// botanical placeholder so layout is real but no unlicensed pixel is shipped.
+// Renders the real photo when product.photos is set, else a labelled botanical
+// placeholder so layout is real with no image. Per the studio image rule, a
+// prototype may use the client's OWN scraped photos here; production requires
+// provenance-confirmed imagery (enforced at "Finish").
 import type { Product } from "../lib/products";
 import { latin, isAvailable } from "../lib/products";
 interface Props { product: Product; plateNo?: number; class?: string; }
