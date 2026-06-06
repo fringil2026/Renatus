@@ -241,6 +241,9 @@ border-left:3px solid var(--amber);padding:.55rem .8rem;margin-top:.7rem}
 .prev .copy{cursor:pointer;color:var(--muted)}.prev .copy:hover{color:var(--amber)}
 .prev .stale{color:#ff5d5d;font-weight:600}
 .paste{margin-top:.8rem;display:grid;gap:.5rem}.paste textarea{width:100%;min-height:7rem}
+.drop{margin-top:.7rem;display:flex;gap:.7rem;align-items:center;flex-wrap:wrap;font-family:var(--m);font-size:.7rem;color:var(--muted)}
+.drop input[type=file]{font-size:.7rem;max-width:16rem}
+.drop label{display:flex;gap:.25rem;align-items:center;cursor:pointer}
 .empty{color:var(--muted);font-family:var(--m);font-size:.8rem}
 </style></head><body><div class="wrap">
 <h1>Web Studio</h1><p class="sub">Two human steps · everything else automated</p>
@@ -274,6 +277,12 @@ async function load(){
     <div class="next">${c.next}</div>
     ${c.production_url?`<div class="prev"><a class="live" href="${c.production_url}" target="_blank" rel="noopener">Live ↗</a> <span class="copy" title="Copy URL" onclick="cp('${c.production_url}')">⧉</span> <span class="purl">${c.production_url}</span></div>`:''}
     ${c.preview_url?`<div class="prev"><a class="pvw" href="${c.preview_url}" target="_blank" rel="noopener">Preview ↗</a> <span class="copy" title="Copy URL" onclick="cp('${c.preview_url}')">⧉</span> <span class="pdate">${c.preview_rel||c.preview_at}</span>${c.preview_stale?' <span class="stale">⚠ last deploy failed</span>':(c.preview_behind?' <span class="stale">⚠ preview behind latest edits</span>':'')}</div>`:''}
+    <form class="drop" onsubmit="return up(event,'${c.slug}')">
+      <input type="file" accept=".md" required>
+      <label><input type="radio" name="dest-${c.slug}" value="specs" checked> specs</label>
+      <label><input type="radio" name="dest-${c.slug}" value="edits"> edits</label>
+      <button class="ghost">Upload .md</button>
+    </form>
     ${c.paste?`<form class="paste" onsubmit="return answers(event,'${c.slug}')">
       <textarea placeholder="Step 2 — paste the owner's questionnaire summary here…"></textarea>
       <button>Save owner answers</button></form>`:''}
@@ -286,6 +295,15 @@ async function answers(e,slug){ e.preventDefault();
   await api('/answers', {slug, t:e.target.querySelector('textarea').value}); load(); return false; }
 async function act(p,slug){ await api(p,{slug}); load(); }
 function cp(t){ navigator.clipboard&&navigator.clipboard.writeText(t); }
+async function up(e,slug){ e.preventDefault();
+  const f=e.target, file=f.querySelector('input[type=file]').files[0];
+  if(!file) return false;
+  if(!file.name.toLowerCase().endsWith('.md')){ alert('Only .md files'); return false; }
+  const dest=f.querySelector('input[name="dest-'+slug+'"]:checked').value;
+  const content=await file.text();
+  const r=await api('/api/upload',{slug,dest,filename:file.name,content});
+  if(r.error) alert('Upload failed: '+r.error); else { f.reset(); load(); }
+  return false; }
 load(); setInterval(load, 4000);
 </script></body></html>"""
 
@@ -345,6 +363,23 @@ class H(BaseHTTPRequestHandler):
                 (cdir / "02-intake" / "owner-answers.txt").write_text(d["t"].strip())
                 bump(cdir, stage="answers-received",
                      msg=f"owner answers received ({len(d['t'])} chars)")
+        elif path == "/api/upload":
+            slug = slugify(d.get("slug", ""))
+            dest = d.get("dest", "")
+            fname = Path(d.get("filename", "")).name  # strip any path components
+            content = d.get("content", "")
+            cdir = CLIENTS / slug
+            if not cdir.exists():
+                return self._send(json.dumps({"error": "no such client"}), "application/json", 404)
+            if dest not in ("specs", "edits"):
+                return self._send(json.dumps({"error": "dest must be specs or edits"}), "application/json", 400)
+            if not fname.lower().endswith(".md") or fname.startswith("."):
+                return self._send(json.dumps({"error": "only .md files allowed"}), "application/json", 400)
+            target = cdir / "02-intake" / dest / fname
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content)
+            bump(cdir, msg=f"uploaded {dest}/{fname} ({len(content)} chars) via dashboard")
+            return self._send(json.dumps({"ok": True, "path": f"02-intake/{dest}/{fname}"}), "application/json")
         elif path == "/archive":
             archive_client(slugify(d.get("slug", "")))
         elif path == "/rerun":
