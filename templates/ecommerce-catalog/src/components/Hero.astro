@@ -25,9 +25,16 @@ const href = `/shop/${product.slug}/`;
       </div>
     </div>
     <div class="order-1 mb-8 md:order-2 md:mb-0">
-      <div class="border border-line-dark">
-        <SpecimenPhoto product={product} class="aspect-[4/5] w-full" />
-      </div>
+      <!-- Art-directed specimen plate: paper mat + ruled frame + plate caption. Kept
+           CONTAINED (not stretched full-bleed) — the source photo is < 1600px, so a
+           full-bleed hero would upscale; flagged for original photography (D-2.7.4). -->
+      <figure class="specimen-mat border border-line-dark shadow-[0_18px_40px_-22px_rgba(0,0,0,0.6)]">
+        <SpecimenPhoto product={product} plateNo={1} class="aspect-[4/5] w-full" />
+        <figcaption class="mt-2 flex items-baseline justify-between px-0.5">
+          <span class="latin text-lg text-ink">{latin(product)}</span>
+          <span class="plate-no">Specimen of the week</span>
+        </figcaption>
+      </figure>
     </div>
   </div>
 </section>

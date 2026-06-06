@@ -15,7 +15,7 @@ const alt = hasPhoto
 ---
 <div class:list={["relative overflow-hidden bg-paper-2", oos && "oos-photo", klass]}>
   {hasPhoto ? (
-    <img src={product.photos[0]} alt={alt} class="h-full w-full object-cover" loading="lazy" />
+    <img src={product.photos[0]} alt={alt} class="specimen-img h-full w-full object-cover" loading="lazy" />
   ) : (
     <svg viewBox="0 0 400 320" role="img" aria-label={alt} class="h-full w-full">
       <rect width="400" height="320" fill="var(--color-paper-2)" />
@@ -32,7 +32,9 @@ const alt = hasPhoto
       </text>
     </svg>
   )}
-  {plateNo && <span class="plate-no absolute right-2 top-2 bg-paper/80 px-1.5">Pl. {plateNo}</span>}
+  <span class="mount-corner tl"></span><span class="mount-corner tr"></span>
+  <span class="mount-corner bl"></span><span class="mount-corner br"></span>
+  {plateNo && <span class="plate-no absolute right-2 top-2 bg-paper/80 px-1.5">Pl. {String(plateNo).padStart(2, "0")}</span>}
   {oos && (
     <span class="in-culture absolute bottom-2 left-2 bg-paper/85">In Cultivation</span>
   )}

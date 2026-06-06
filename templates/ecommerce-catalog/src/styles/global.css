@@ -72,6 +72,17 @@ body {
 /* Out-of-stock photo: desaturate 30% per spec */
 .oos-photo { filter: grayscale(0.85) saturate(0.55) brightness(0.97); }
 
+/* SIGNATURE ELEMENT — the herbarium specimen plate: photo seated on a paper mat with
+   pressed photo-corner mounts, one consistent treatment across the whole site. */
+.specimen-mat { background: var(--color-paper); padding: 0.55rem; }
+.mount-corner { position: absolute; width: 13px; height: 13px; border: 1.5px solid var(--color-moss); opacity: 0.55; }
+.mount-corner.tl { top: 6px; left: 6px; border-right: 0; border-bottom: 0; }
+.mount-corner.tr { top: 6px; right: 6px; border-left: 0; border-bottom: 0; }
+.mount-corner.bl { bottom: 6px; left: 6px; border-right: 0; border-top: 0; }
+.mount-corner.br { bottom: 6px; right: 6px; border-left: 0; border-top: 0; }
+/* one warm color treatment for every specimen image */
+.specimen-img { filter: saturate(1.03) contrast(1.02); }
+
 /* "IN CULTIVATION" stamp on out-of-stock plates */
 .in-culture {
   font-family: var(--font-mono);
