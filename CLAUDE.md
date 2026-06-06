@@ -150,6 +150,31 @@ archive the log to `.claude/audit/<YYYY-MM-DD>-<task-slug>.log` and start a fres
 `session.log`. The log is appended automatically by the PostToolUse hook in
 `.claude/settings.local.json`; `.claude/audit/` is git-ignored.
 
+## Design ground rules — binding on every build and template
+1. **Named concept.** Each site has ONE recorded sentence of art direction; every visual
+   decision must trace to it. No concept, no build.
+2. **Distinctiveness bar.** Banned by default: generic template sameness (white bg + gray
+   cards + blue accent), default system fonts, stock-gradient heroes, three-icon feature rows.
+   Each site ships ONE memorable signature visual element.
+3. **Typography with intent.** A characterful display face deliberately paired with a body
+   face; bold scale contrast. Never default-sans-for-everything.
+4. **Imagery non-negotiables.** (a) Resolve scraped images to their LARGEST variants — detect
+   thumbnail URL patterns, fetch the originals, RECORD dimensions. (b) Never upscale or stretch;
+   an image below the slot minimum (hero ≥1600px wide, card ≥600px) is REJECTED from that slot
+   and a photography ask is added to the deliverables request. (c) One cropping/color treatment
+   per site. (d) Heroes are full-bleed, single-subject, art-directed.
+5. **Motion.** Subtle, purposeful microinteractions that serve the concept; always honor
+   `prefers-reduced-motion`. No parallax circus.
+6. **DESIGN QA GATE.** A build is NOT done until a recorded self-audit passes: names the concept
+   + the signature element; zero banned patterns; every image meets its slot minimum, is
+   unstretched and correspondence-correct; checked at desktop AND ~390px mobile; and answers
+   honestly "would a visitor remember this tomorrow, and does it outclass the client's
+   competitors?". Failures iterate BEFORE reporting. The audit is appended to the build report
+   (and, for an edit, to that edit's Resolution).
+
+Pipeline support: image records carry `source_page`, pixel `dimensions`, and the
+`largest_variant` URL; builds consume that record (never raw thumbnail URLs).
+
 ## Hard rules — always, regardless of skill loading
 - NEVER fabricate a client fact. Blanks stay blank and get flagged FOR REVIEW.
 - NEVER edit templates/ for a client; copy first.
