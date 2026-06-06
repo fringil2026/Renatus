@@ -145,7 +145,8 @@ def submit(slug, domain):
             QUEUE.append((slug, domain))
 
 def worker():
-    """Reap finished scrape processes and start queued ones."""
+    """Reap finished scrape processes, start queued ones, and auto-prepare the intake pack
+    the moment a client reaches baseline-ready."""
     while True:
         time.sleep(2)
         with LOCK:
@@ -156,6 +157,23 @@ def worker():
                 slug, domain = QUEUE.pop(0)
                 if (CLIENTS / slug).exists():
                     start_scrape(slug, domain)
+        # auto intake-pack: stage flipped to baseline-ready and no pack yet
+        if CLIENTS.exists():
+            for d in CLIENTS.iterdir():
+                if not d.is_dir() or d.name.startswith("."):
+                    continue
+                if read_status(d).get("stage") != "baseline-ready":
+                    continue
+                if (d / "02-intake" / "redesign-plan.md").exists():
+                    continue
+                slug = d.name
+                with TASK_LOCK:
+                    if slug in TASKS:
+                        continue
+                    TASKS[slug] = {"kind": "intake pack", "label": "prepare intake pack", "started": now(), "tail": [], "proc": None}
+                threading.Thread(target=run_advance,
+                                 args=(slug, f"Prepare intake pack for {slug}", "intake pack", None),
+                                 daemon=True).start()
 
 def reap_orphans():
     """On startup: anything stuck in 'scraping' has no live process — mark for rerun."""
@@ -496,6 +514,9 @@ def list_clients():
                     "backend_cfg": (lambda c: {"status": c["status"], "version": c["version"], "mode": c.get("mode", "")} if c else None)(parse_backend_config(d)),
                     "busy": d.name in TASKS,
                     "decisions_open": open_decision_count(d.name),
+                    "documents": [n for n in ("redesign-plan.md", "deliverables-request.md",
+                                              "production-roadmap.md", "backend-config.yaml")
+                                  if (d / "02-intake" / n).exists()],
                     "task_tail": TASKS.get(d.name, {}).get("tail", [])[-6:] if d.name in TASKS else [],
                     "log": st.get("log", [])[-4:]})
     return out
@@ -566,6 +587,19 @@ button.adv[disabled]{color:var(--muted);border-color:var(--line);cursor:not-allo
 .decopt:hover{border-color:var(--amber);color:var(--amber)}
 .decrec{background:var(--amber);color:var(--ink);border:1px solid var(--amber);font-family:var(--b);font-weight:600;font-size:.8rem;text-transform:none}
 .decreason{font-family:var(--m);font-size:.64rem;color:var(--muted);margin-top:.4rem}
+.docs{margin-top:.6rem;font-family:var(--m);font-size:.7rem;display:flex;gap:.4rem;align-items:center;flex-wrap:wrap}
+.docbtn{background:transparent;color:var(--amber);border:1px solid var(--line);font-family:var(--m);font-size:.66rem;text-transform:none;padding:.15em .5em}
+.docbtn:hover{border-color:var(--amber)}
+.docbox{max-width:48rem;max-height:86vh;display:flex;flex-direction:column}
+.docbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:.8rem}
+.docmd{overflow:auto;font-size:.85rem;line-height:1.5}
+.docmd h1,.docmd h2,.docmd h3{font-family:var(--d);color:var(--amber);text-transform:uppercase;margin:1rem 0 .4rem}
+.docmd h1{font-size:1.3rem}.docmd h2{font-size:1.1rem}.docmd h3{font-size:.95rem}
+.docmd code{font-family:var(--m);background:var(--ink);padding:.05em .3em}
+.docmd table{border-collapse:collapse;width:100%;font-size:.72rem;margin:.5rem 0}
+.docmd td,.docmd th{border:1px solid var(--line);padding:.3rem .4rem;text-align:left}
+.docmd ul{padding-left:1.2rem}.docmd hr{border:0;border-top:1px solid var(--line);margin:.8rem 0}
+.docmd a{color:var(--amber)}
 .tasktail{font-family:var(--m);font-size:.62rem;color:#7fd18f;background:#0a1a10;border-left:3px solid #3a6b4f;
 padding:.5rem .7rem;margin-top:.5rem;white-space:pre-wrap;max-height:9rem;overflow:auto}
 .modal{position:fixed;inset:0;background:rgba(4,9,14,.78);display:flex;align-items:center;justify-content:center;z-index:50}
@@ -620,6 +654,10 @@ padding:.5rem .7rem;margin-top:.5rem;white-space:pre-wrap;max-height:9rem;overfl
   <label class="m-lab">Type the client slug to confirm: <b id="m-slug"></b></label>
   <input id="m-input" placeholder="slug" autocomplete="off">
   <div class="m-btns"><button id="m-run">Run</button><button class="ghost" onclick="closeModal()">Cancel</button></div>
+</div></div>
+<div id="docmodal" class="modal" style="display:none"><div class="modalbox docbox">
+  <div class="docbar"><b id="doc-title"></b><button class="ghost" onclick="document.getElementById('docmodal').style.display='none'">Close</button></div>
+  <div id="doc-body" class="docmd"></div>
 </div></div>
 <div id="rehexit" class="modal" style="display:none"><div class="modalbox">
   <h3>Exit rehearsal — the swap checklist</h3>
@@ -763,6 +801,7 @@ async function load(){
     ${c.advance_failed&&!c.busy?`<div class="prev"><span class="stale">⚠ advance failed — see log</span></div>`:''}
     ${c.production_url?`<div class="prev"><a class="live" href="${c.production_url}" target="_blank" rel="noopener">Live ↗</a> <span class="copy" title="Copy URL" onclick="cp('${c.production_url}')">⧉</span> <span class="purl">${c.production_url}</span></div>`:''}
     ${c.preview_url?`<div class="prev"><a class="pvw" href="${c.preview_url}" target="_blank" rel="noopener">Preview ↗</a> <span class="copy" title="Copy URL" onclick="cp('${c.preview_url}')">⧉</span> <span class="pdate">${c.preview_rel||c.preview_at}</span>${c.preview_stale?' <span class="stale">⚠ last deploy failed</span>':(c.preview_behind?' <span class="stale">⚠ preview behind latest edits</span>':'')}</div>`:''}
+    ${c.documents&&c.documents.length?`<div class="docs"><span class="mono-label">documents</span> ${c.documents.map(n=>`<button class="docbtn" onclick="openDoc('${c.slug}','${n}')">${n}</button>`).join(' ')}</div>`:''}
     <form class="drop" onsubmit="return up(event,'${c.slug}')">
       <input type="file" accept=".md" required>
       <label><input type="radio" name="dest-${c.slug}" value="specs" checked> specs</label>
@@ -803,6 +842,29 @@ function renderNeeds(decs){
 async function resolveDec(scope,file,choice){
   const r=await api('/api/decisions/resolve',{scope,file,choice});
   if(r.error) alert('Could not resolve: '+r.error); else load();
+}
+function md2html(src){
+  const ec=s=>s.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+  const inl=s=>ec(s).replace(/`([^`]+)`/g,'<code>$1</code>').replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>').replace(/\[([^\]]+)\]\(([^)]+)\)/g,'<a href="$2" target="_blank" rel="noopener">$1</a>');
+  const L=src.split('\n'); let h=''; let i=0;
+  while(i<L.length){ let l=L[i];
+    let m=l.match(/^\s*(#{1,3})\s+(.*)/); if(m){ h+=`<h${m[1].length}>${inl(m[2])}</h${m[1].length}>`; i++; continue; }
+    if(/^\s*---\s*$/.test(l)){ h+='<hr>'; i++; continue; }
+    if(/^\s*\|.*\|\s*$/.test(l)){ const rows=[]; while(i<L.length&&/^\s*\|.*\|\s*$/.test(L[i])){ rows.push(L[i]); i++; }
+      const cells=r=>r.trim().replace(/^\||\|$/g,'').split('|').map(c=>c.trim());
+      let t='<table>'; rows.forEach((r,ri)=>{ if(ri===1&&/^[\s:|-]+$/.test(r)) return; const tg=ri===0?'th':'td'; t+='<tr>'+cells(r).map(c=>`<${tg}>${inl(c)}</${tg}>`).join('')+'</tr>'; }); h+=t+'</table>'; continue; }
+    if(/^\s*[-*]\s+/.test(l)){ let t='<ul>'; while(i<L.length&&/^\s*[-*]\s+/.test(L[i])){ t+='<li>'+inl(L[i].replace(/^\s*[-*]\s+/,''))+'</li>'; i++; } h+=t+'</ul>'; continue; }
+    if(l.trim()===''){ i++; continue; }
+    let p=l; i++; while(i<L.length&&L[i].trim()!==''&&!/^\s*(#{1,3}\s|[-*]\s|\||---)/.test(L[i])){ p+=' '+L[i]; i++; } h+='<p>'+inl(p)+'</p>';
+  } return h;
+}
+async function openDoc(slug,name){
+  const txt=await (await fetch('/api/doc?slug='+encodeURIComponent(slug)+'&name='+encodeURIComponent(name))).text();
+  document.getElementById('doc-title').textContent=slug+' / '+name;
+  document.getElementById('doc-body').innerHTML= name.endsWith('.yaml')
+    ? '<pre style="white-space:pre-wrap;font-family:var(--m);font-size:.72rem">'+txt.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))+'</pre>'
+    : md2html(txt);
+  document.getElementById('docmodal').style.display='flex';
 }
 async function up(e,slug){ e.preventDefault();
   const f=e.target, file=f.querySelector('input[type=file]').files[0];
@@ -863,6 +925,14 @@ class H(BaseHTTPRequestHandler):
                                    "running": slug in TASKS}), "application/json")
         elif path == "/api/decisions":
             self._send(json.dumps({"decisions": list_open_decisions()}), "application/json")
+        elif path == "/api/doc":
+            q = parse_qs(urlparse(self.path).query)
+            slug = slugify(q.get("slug", [""])[0]); name = q.get("name", [""])[0]
+            allowed = {"redesign-plan.md", "deliverables-request.md", "production-roadmap.md", "backend-config.yaml"}
+            f = CLIENTS / slug / "02-intake" / name
+            if name not in allowed or not f.exists():
+                return self._send("not found", code=404)
+            self._send(f.read_text(), "text/plain")
         else:
             self._send("not found", code=404)
 
