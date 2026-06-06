@@ -87,6 +87,15 @@ baseline if blank — record the inference). If a match exists, read it and appl
 content drafting, schema, section choices, and tone. If none exists, say so explicitly,
 proceed with general defaults, and suggest creating one from playbooks/_TEMPLATE.md.
 
+## Auto-approval audit
+At the END of every task, read the `.claude/audit/session.log` entries written since the
+task began and emit a mini report: the total count of auto-approved actions, grouped (file
+edits / shell commands / deploys) with one-line summaries, and FLAG anything outside the
+routine pattern (a deploy, a deletion, anything touching paths outside the project). Then
+archive the log to `.claude/audit/<YYYY-MM-DD>-<task-slug>.log` and start a fresh
+`session.log`. The log is appended automatically by the PostToolUse hook in
+`.claude/settings.local.json`; `.claude/audit/` is git-ignored.
+
 ## Hard rules — always, regardless of skill loading
 - NEVER fabricate a client fact. Blanks stay blank and get flagged FOR REVIEW.
 - NEVER edit templates/ for a client; copy first.
