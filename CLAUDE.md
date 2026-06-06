@@ -139,6 +139,20 @@ these are RECEIVED/VERIFIED — §2.1 and §2.2 always count), and (b) which bui
 newly-unblocked item releases. When a received asset confirms provenance, that also clears the
 matching image/copy FOR REVIEW flag at "Finish".
 
+## Command 8 — "Propose backend config for <slug>"
+For a commerce client (ecommerce-catalog archetype) at/after prototype: read
+`templates/ecommerce-catalog/BACKEND.md` (the necessity tiers) plus the client's
+`01-baseline/feature-census.md`, binding spec, the matching playbook, and
+`02-intake/deliverables-request.md`. Emit `02-intake/backend-config.yaml` listing EVERY
+module/feature from BACKEND.md with: its **tier**, **on/off**, and a **one-line reason**
+(the evidence citation for EVIDENCED; the judgment rationale for JUDGMENT). Apply the baseline
+rule: REQUIRED and EVIDENCED are ON by default; JUDGMENT items get a recommended on/off with the
+reason; DEFERRED are off unless requested. The file carries a signature block —
+`config-id: WS-BCFG-<CLIENT>-NNN`, `version`, `status: DRAFT` until the human confirms, then
+`BINDING`. A BINDING backend-config is a BUILD ORDER: Phase 2+ implements EXACTLY its ON set;
+changes require a NEW version, never silent edits. (The dashboard can enqueue this headlessly and
+flip DRAFT→BINDING on slug-typed confirm — see studio.py "Configure backend".)
+
 ## Product correspondence (catalog builds) — binding
 Every field of a product entry — name, label, price, description, AND photo — is assembled
 ONLY from that product's OWN source page. In `crawl.json` each page carries its own `images[]`;
