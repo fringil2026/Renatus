@@ -220,6 +220,18 @@ a deny rule, and a `cd`-prefixed chain matches none of the allow patterns. There
 - Never reshape a command to evade a deny rule. If a command you genuinely need has no allow
   rule, say so and propose adding the rule — don't work around it.
 
+## Decision surfaces — binding
+Any capability that requires the human's JUDGMENT — mode changes, config confirmations, choices
+between alternatives, approvals — MUST ship with a dashboard control in the SAME commit that
+creates it. A decision point reachable only via terminal or chat is an INCOMPLETE feature.
+The generalized mechanism is the **decisions inbox** (filename-is-state, mirroring edits): when a
+command or headless job hits a fork needing the human's call, it does NOT guess and does NOT die
+silently — it writes `clients/<slug>/02-intake/decisions/NNN-OPEN-<short-name>.yaml` (studio-level:
+`.claude/decisions/`) with question / context / options (each + consequence) / recommendation +
+reason / what-happens-next per option. The dashboard renders OPEN decisions in a "Needs your call"
+strip; resolving one records the choice + timestamp, renames OPEN→RESOLVED (immutable history),
+logs to status.json, and resumes any job the decision was blocking.
+
 ## Auto-approval audit
 At the END of every task, read the `.claude/audit/session.log` entries written since the
 task began and emit a mini report: the total count of auto-approved actions, grouped (file
