@@ -98,6 +98,18 @@ these are RECEIVED/VERIFIED — §2.1 and §2.2 always count), and (b) which bui
 newly-unblocked item releases. When a received asset confirms provenance, that also clears the
 matching image/copy FOR REVIEW flag at "Finish".
 
+## Product correspondence (catalog builds) — binding
+Every field of a product entry — name, label, price, description, AND photo — is assembled
+ONLY from that product's OWN source page. In `crawl.json` each page carries its own `images[]`;
+the catalog extractor must keep a product's text and its image together as they appeared on the
+same page. NEVER pool images across pages and re-attach them by filename, array order, or index —
+that silently produces a right-name / wrong-photo catalog.
+
+Catalog-build verification step (run before declaring a catalog build done): spot-check 10 random
+built products against their source pages (the `source_page` recorded per record) — confirm the
+rendered name/species matches the photo's origin page. ANY name↔photo mismatch is a BUILD FAILURE
+to fix before reporting, not a cosmetic note.
+
 ## Build specs (binding build orders)
 Any `.md` file in a client's `02-intake/specs/` is a BINDING build order, not a
 suggestion. When assembling a prototype or finishing a client, read every spec in
