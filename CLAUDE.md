@@ -22,7 +22,11 @@ live in archive/<slug>-<timestamp>/ — read-only history, one folder per comple
 
 ## Command 1 — "Assemble prototype for <slug>"
 Trigger: status.stage == baseline-ready (dashboard tells the human when).
-1. Read 01-baseline/ in full (inventory, drafts, audits, coverage, feature-census).
+0. Record the chosen design concept — the option the human picked on the "Choose the design concept"
+   decision (opened by the intake pack). Build to THAT concept; if no decision is resolved yet, stop
+   and surface it (don't guess the concept).
+1. Read 01-baseline/ in full (inventory, drafts, audits, coverage, feature-census) and the intake
+   pack (`02-intake/redesign-plan.md`).
    PARITY FLOOR: the prototype MUST carry every feature the census marks CARRY-OVER; STUB+FLAG
    features get a visible honest stub. New/better features come ON TOP of parity, never INSTEAD
    of it — dropping a CARRY-OVER feature is a build failure unless the census marked it OBSOLETE.
@@ -34,13 +38,11 @@ Trigger: status.stage == baseline-ready (dashboard tells the human when).
 6. Seed 02-intake/redirect-map.csv from url-inventory.csv (old URL column filled, new column proposed).
 7. `npm install && npm run build` in 03-site/ to verify; fix failures.
 8. Set stage=prototype, then awaiting-owner. Report: what was applied, what is DRAFT, what is blank.
-9. Generate `02-intake/deliverables-request.md` from `templates/deliverables-template.md` by
-   FILTERING AND SPECIALIZING: keep only rows relevant to this archetype, the detected stack,
-   and the spec's phases; drop the rest. SPECIALIZE from evidence — name the detected GA4 ID,
-   reference detected forms by their page, name the detected CMS/CDN. §2.1 and §2.2 are ALWAYS
-   BLOCKING and always kept. Populate §2.7 from any binding spec's "client facts required".
-   Append an "Omitted as not applicable" list, one line + reason per dropped row, so every
-   omission is auditable. (See "Process deliverables" below — this file then lives and updates.)
+9. UPDATE `02-intake/deliverables-request.md` (CREATED earlier by "Prepare intake pack") with
+   build-time discoveries — e.g. integrations confirmed in code, image-resolution gaps found,
+   forms wired. Same filtering/specializing rules; never silently drop rows. (Generation moved to
+   the intake pack so the human gets the deliverables list the moment scraping finishes, not only
+   at build.)
 10. Generate `01-baseline/block-purpose-map.md` — the audit trail for Purpose-first
     reconstruction (above). A table: source block (page + brief identifier) → purpose
     designation → target component (existing or new) → improvement made. It proves every block
@@ -169,6 +171,25 @@ Hard guarantees:
   endpoint + Resend domain; unchanged: schema, code, content).
 - Dashboard: Advance/Phase buttons HONOR rehearsal — enabled with a visible **REHEARSAL** badge
   instead of blocked-on-deliverables. The config still has to be BINDING (the build order stands).
+
+## Command 9 — "Prepare intake pack for <slug>"
+Trigger: auto-enqueued the moment a client reaches `baseline-ready` (also runnable by hand). Produces
+two documents in `02-intake/`, grounded ENTIRELY in baseline evidence — everything DRAFT-labelled,
+no fabricated client facts:
+1. `redesign-plan.md` — the pre-build plan:
+   - **2–3 NAMED art-direction concept proposals** (for a commerce archetype, each per the
+     brand-moment rules): one sentence + palette + type pairing + signature element + WHERE the
+     brand moment lives — each traceable to the client's actual world (from the scrape).
+   - **Feature plan** from the census: CARRY-OVER (parity floor) · STUB+FLAG (+ unblock facts) ·
+     OBSOLETE (+ reasons).
+   - **Block-purpose preview**: the major source blocks → their purpose designations (seeds the
+     full purpose map at build).
+   - **Scope summary**: archetype, playbook routed, binding specs found, phases anticipated.
+2. `deliverables-request.md` — generated HERE (moved out of Command 1) by the same filtering/
+   specializing rules; §2.1/2.2 always BLOCKING; auditable "Omitted" list.
+Then OPEN a decision (the inbox): **"Choose the design concept for <slug>"** — the 2–3 concepts as
+options (one-line consequence each) + a recommendation. The chosen option is what Command 1 step 0
+records and builds.
 
 ## Product correspondence (catalog builds) — binding
 Every field of a product entry — name, label, price, description, AND photo — is assembled
