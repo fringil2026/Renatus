@@ -305,6 +305,22 @@ def parse_backend_config(cdir):
             cur["reason"] = s.split("reason:", 1)[1].strip().strip('"')
     return cfg
 
+def set_rehearsal(cdir, on):
+    """Toggle `mode: rehearsal` in backend-config.yaml via a line edit (preserves modules/comments)."""
+    f = cdir / "02-intake" / "backend-config.yaml"
+    if not f.exists():
+        return False
+    lines = [l for l in f.read_text().splitlines() if not l.strip().startswith("mode:")]
+    if on:
+        out = []
+        for l in lines:
+            out.append(l)
+            if l.strip().startswith("status:"):
+                out.append("mode: rehearsal")
+        lines = out
+    f.write_text("\n".join(lines) + "\n")
+    return True
+
 def write_backend_config(cdir, cfg):
     L = [f'config-id: {cfg["config_id"]}', f'version: {cfg["version"]}',
          f'status: {cfg["status"]}', f'client: {cdir.name}', f'generated: {now()}', "modules:"]
@@ -409,7 +425,7 @@ def list_clients():
                     "advance_failed": st.get("advance_failed", False),
                     "advance": advance_action(d.name, st),
                     "can_configure": st.get("stage") == "prototype" and has_binding_spec(d),
-                    "backend_cfg": (lambda c: {"status": c["status"], "version": c["version"]} if c else None)(parse_backend_config(d)),
+                    "backend_cfg": (lambda c: {"status": c["status"], "version": c["version"], "mode": c.get("mode", "")} if c else None)(parse_backend_config(d)),
                     "busy": d.name in TASKS,
                     "task_tail": TASKS.get(d.name, {}).get("tail", [])[-6:] if d.name in TASKS else [],
                     "log": st.get("log", [])[-4:]})
@@ -524,6 +540,16 @@ padding:.5rem .7rem;margin-top:.5rem;white-space:pre-wrap;max-height:9rem;overfl
   <input id="m-input" placeholder="slug" autocomplete="off">
   <div class="m-btns"><button id="m-run">Run</button><button class="ghost" onclick="closeModal()">Cancel</button></div>
 </div></div>
+<div id="rehexit" class="modal" style="display:none"><div class="modalbox">
+  <h3>Exit rehearsal — the swap checklist</h3>
+  <p class="m-desc">Leaving rehearsal means moving off studio test resources onto the client's real
+    accounts. Check each off as you complete it — this is the un-rehearsal ritual. Schema, code, and
+    content do NOT change.</p>
+  <div id="rehlist"></div>
+  <label class="m-lab">Then type the client slug to confirm: <b id="reh-slug"></b></label>
+  <input id="reh-input" placeholder="slug" autocomplete="off">
+  <div class="m-btns"><button id="reh-run" disabled>Exit rehearsal</button><button class="ghost" onclick="document.getElementById('rehexit').style.display='none'">Cancel</button></div>
+</div></div>
 <div id="cfgmodal" class="modal" style="display:none"><div class="modalbox cfgbox">
   <h3 id="cfg-title"></h3>
   <p class="m-desc">REQUIRED + EVIDENCED are locked on (never less than your evidence). Toggle only the JUDGMENT items; DEFERRED are opt-in.</p>
@@ -595,6 +621,28 @@ async function sendChat(e,key){ e.preventDefault();
   t.value=''; chatDraft[key]=''; renderChat(key); return false; }
 function cpCmd(slug){ const c=findC(slug); if(c&&c.advance) cp('claude -p "'+c.advance.command+'"'); }
 function closeModal(){ document.getElementById('modal').style.display='none'; }
+function enterReh(slug){
+  document.getElementById('m-title').textContent='Enter rehearsal mode';
+  document.getElementById('m-desc').textContent="Phases 2–4 build against studio TEST resources (test Supabase/Stripe/Resend) and every surface shows a TEST MODE banner. Cutover stays blocked until you swap to the client's real accounts.";
+  document.getElementById('m-cmd').textContent=''; document.getElementById('m-unmet').textContent='';
+  document.getElementById('m-slug').textContent=slug;
+  const inp=document.getElementById('m-input'); inp.value='';
+  document.getElementById('m-run').onclick=async()=>{ const r=await api('/api/rehearsal',{slug,action:'enter',confirm:inp.value.trim()}); if(r.error) alert(r.error); else { closeModal(); load(); } };
+  document.getElementById('modal').style.display='flex'; inp.focus();
+}
+const SWAP=["SUPABASE_URL + service key → client's own project","STRIPE_SECRET_KEY → client's LIVE key","RESEND_API_KEY → client's account","Resend FROM domain → client's verified domain (reply-to their inbox)","Stripe webhook endpoint → production URL + new signing secret","Remove every #REHEARSAL tag from secrets/.env"];
+function exitReh(slug){
+  const list=document.getElementById('rehlist');
+  list.innerHTML=SWAP.map(s=>`<label class="citem"><input type="checkbox" class="swap"> ${esc(s)}</label>`).join('');
+  document.getElementById('reh-slug').textContent=slug;
+  const inp=document.getElementById('reh-input'); inp.value='';
+  const run=document.getElementById('reh-run');
+  const refresh=()=>{ const all=[...list.querySelectorAll('.swap')].every(x=>x.checked); run.disabled=!(all && inp.value.trim()===slug); };
+  list.querySelectorAll('.swap').forEach(x=>x.addEventListener('change',refresh));
+  inp.oninput=refresh; refresh();
+  run.onclick=async()=>{ const r=await api('/api/rehearsal',{slug,action:'exit',confirm:inp.value.trim()}); if(r.error) alert(r.error); else { document.getElementById('rehexit').style.display='none'; load(); } };
+  document.getElementById('rehexit').style.display='flex';
+}
 function openAdvance(slug){
   const c=findC(slug); if(!c||!c.advance||!c.advance.enabled) return;
   document.getElementById('m-title').textContent=c.advance.label;
@@ -622,6 +670,7 @@ async function load(){
       ${c.busy?'<span class="run">● running…</span>':''}
       ${c.advance?`<button class="adv" ${c.advance.enabled?'':'disabled'} title="${(c.advance.tooltip||c.advance.desc||'').replace(/"/g,'&quot;')}" onclick="openAdvance('${c.slug}')">${c.advance.label}</button>${c.advance.badge?`<span class="rehbadge">${c.advance.badge}</span>`:''}<span class="copy" title="Copy terminal command" onclick="cpCmd('${c.slug}')">⧉</span>`:''}
       ${c.can_configure?`<button class="ghost" onclick="configBackend('${c.slug}')">Configure backend${c.backend_cfg?` · ${c.backend_cfg.status} v${c.backend_cfg.version}`:''}</button>`:''}
+      ${c.backend_cfg?(c.backend_cfg.mode==='rehearsal'?`<span class="rehbadge">REHEARSAL</span><button class="ghost" onclick="exitReh('${c.slug}')">Exit rehearsal</button>`:`<button class="ghost" onclick="enterReh('${c.slug}')">Enter rehearsal mode</button>`):''}
       ${d.server?(d.ttyd_url?`<a class="ghost" href="${d.ttyd_url}" target="_blank" rel="noopener">Open session ↗</a>`:''):`<button class="ghost" onclick="api('/open',{slug:'${c.slug}'})">Claude: ${c.name}</button>`}
       ${c.rerun?`<button class="ghost" onclick="act('/rerun','${c.slug}')">Rerun</button>`:''}
       <button class="${c.done?'done':'ghost'}" onclick="if(confirm('Archive ${c.slug}? Moves it to archive/ and clears this row.'))act('/archive','${c.slug}')">Archive</button>
@@ -821,6 +870,22 @@ class H(BaseHTTPRequestHandler):
             on = sum(1 for m in cfg["modules"] if m["on"])
             bump(cdir, msg=f"backend-config CONFIRMED -> BINDING v{cfg['version']} ({on}/{len(cfg['modules'])} modules ON)")
             return self._send(json.dumps({"ok": True, "version": cfg["version"]}), "application/json")
+        elif path == "/api/rehearsal":
+            slug = slugify(d.get("slug", "")); cdir = CLIENTS / slug
+            action = d.get("action", "")
+            if d.get("confirm", "") != slug:
+                return self._send(json.dumps({"error": "type the slug exactly to confirm"}), "application/json", 400)
+            if not parse_backend_config(cdir):
+                return self._send(json.dumps({"error": "configure the backend first"}), "application/json", 400)
+            if action == "enter":
+                set_rehearsal(cdir, True)
+                bump(cdir, msg="ENTERED rehearsal mode (studio test resources; TEST banners; cutover blocked)")
+            elif action == "exit":
+                set_rehearsal(cdir, False)
+                bump(cdir, msg="EXITED rehearsal mode (swap checklist completed — now on real accounts)")
+            else:
+                return self._send(json.dumps({"error": "action must be enter or exit"}), "application/json", 400)
+            return self._send(json.dumps({"ok": True}), "application/json")
         elif path == "/archive":
             archive_client(slugify(d.get("slug", "")))
         elif path == "/rerun":
