@@ -1,8 +1,8 @@
 ---
-// Catalog filters: genus chips, difficulty select, "In bloom now" toggle.
-// Pure progressive enhancement — the grid is fully rendered server-side; this
-// script only hides/shows existing [data-card] nodes, so it works with JS off
-// (all specimens simply show) and needs no hydration framework.
+// Catalog controls: search, genus chips, difficulty, "in bloom now", SORT, and
+// load-more pagination. Pure progressive enhancement — the grid is fully rendered
+// server-side; this script reorders/hides existing [data-card] nodes, so with JS off
+// everything simply shows. Needs no hydration framework.
 import { genera, difficulties } from "../lib/products";
 const generaList = genera();
 ---
@@ -10,12 +10,8 @@ const generaList = genera();
   <div class="mx-auto flex max-w-[75rem] flex-wrap items-center gap-x-6 gap-y-3 px-5 py-3.5" data-filterbar>
     <label class="flex items-center gap-2 text-sm">
       <span class="sr-only">Search orchids</span>
-      <input
-        type="search"
-        data-search
-        placeholder="Search orchids…"
-        class="w-44 border border-line bg-paper px-2.5 py-1 text-sm text-ink placeholder:text-moss focus:w-56 transition-[width]"
-      />
+      <input type="search" data-search placeholder="Search orchids…"
+        class="w-44 border border-line bg-paper px-2.5 py-1 text-sm text-ink placeholder:text-moss focus:w-56 transition-[width]" />
     </label>
     <div class="flex flex-wrap items-center gap-1.5" role="group" aria-label="Filter by genus">
       <button type="button" data-genus="all" class="genus-chip is-active mono-label border border-line px-2.5 py-1 hover:border-conservatory">All</button>
@@ -24,7 +20,16 @@ const generaList = genera();
       ))}
     </div>
     <label class="ml-auto flex items-center gap-2 text-sm">
-      <span class="mono-label">Difficulty</span>
+      <span class="mono-label">Sort</span>
+      <select data-sort class="border border-line bg-paper px-2 py-1 text-sm text-ink">
+        <option value="name">Name A–Z</option>
+        <option value="price-asc">Price: low to high</option>
+        <option value="price-desc">Price: high to low</option>
+        <option value="bloom">In bloom first</option>
+      </select>
+    </label>
+    <label class="flex items-center gap-2 text-sm">
+      <span class="mono-label">Care level</span>
       <select data-difficulty class="border border-line bg-paper px-2 py-1 text-sm text-ink">
         <option value="all">Any</option>
         {difficulties.map((d) => <option value={d}>{d}</option>)}
@@ -43,44 +48,55 @@ const generaList = genera();
 
 <script>
   const bar = document.querySelector("[data-filterbar]");
-  if (bar) {
-    const cards = Array.from(document.querySelectorAll<HTMLElement>("[data-card]"));
-    const state = { genus: "all", difficulty: "all", bloom: false, q: "" };
+  const grid = document.querySelector<HTMLElement>("[data-grid]");
+  if (bar && grid) {
+    const cards = Array.from(grid.querySelectorAll<HTMLElement>("[data-card]"));
     const empty = document.querySelector<HTMLElement>("[data-empty]");
+    const more = document.querySelector<HTMLButtonElement>("[data-loadmore]");
+    const pageSize = parseInt(grid.dataset.pageSize || "9", 10);
+    const state = { genus: "all", difficulty: "all", bloom: false, q: "", sort: "name", limit: pageSize };
+
+    const num = (c: HTMLElement, k: string) => parseFloat(c.dataset[k] || "0");
+    function sorted(list: HTMLElement[]) {
+      const by = state.sort;
+      return [...list].sort((a, b) => {
+        if (by === "price-asc") return num(a, "price") - num(b, "price");
+        if (by === "price-desc") return num(b, "price") - num(a, "price");
+        if (by === "bloom") return (b.dataset.bloom === "true" ? 1 : 0) - (a.dataset.bloom === "true" ? 1 : 0);
+        return (a.dataset.name || "").localeCompare(b.dataset.name || "");
+      });
+    }
 
     function apply() {
-      let shown = 0;
-      for (const c of cards) {
+      const matched = cards.filter((c) => {
         const okG = state.genus === "all" || c.dataset.genus === state.genus;
         const okD = state.difficulty === "all" || c.dataset.difficulty === state.difficulty;
         const okB = !state.bloom || c.dataset.bloom === "true";
         const okQ = !state.q || (c.dataset.search || "").includes(state.q);
-        const show = okG && okD && okB && okQ;
-        c.hidden = !show;
-        if (show) shown++;
-      }
-      if (empty) empty.hidden = shown !== 0;
+        return okG && okD && okB && okQ;
+      });
+      const order = sorted(matched);
+      for (const c of cards) c.hidden = true;
+      order.slice(0, state.limit).forEach((c, i) => { c.hidden = false; c.style.order = String(i); });
+      if (empty) empty.hidden = matched.length !== 0;
+      if (more) more.hidden = matched.length <= state.limit;
     }
+
+    function reset() { state.limit = pageSize; apply(); }
 
     bar.querySelectorAll<HTMLButtonElement>(".genus-chip").forEach((btn) =>
       btn.addEventListener("click", () => {
         bar.querySelectorAll(".genus-chip").forEach((b) => b.classList.remove("is-active"));
         btn.classList.add("is-active");
         state.genus = btn.dataset.genus || "all";
-        apply();
-      })
-    );
-    bar.querySelector<HTMLSelectElement>("[data-difficulty]")?.addEventListener("change", (e) => {
-      state.difficulty = (e.target as HTMLSelectElement).value;
-      apply();
-    });
-    bar.querySelector<HTMLInputElement>("[data-bloom]")?.addEventListener("change", (e) => {
-      state.bloom = (e.target as HTMLInputElement).checked;
-      apply();
-    });
-    bar.querySelector<HTMLInputElement>("[data-search]")?.addEventListener("input", (e) => {
-      state.q = (e.target as HTMLInputElement).value.trim().toLowerCase();
-      apply();
-    });
+        reset();
+      }));
+    bar.querySelector<HTMLSelectElement>("[data-difficulty]")?.addEventListener("change", (e) => { state.difficulty = (e.target as HTMLSelectElement).value; reset(); });
+    bar.querySelector<HTMLSelectElement>("[data-sort]")?.addEventListener("change", (e) => { state.sort = (e.target as HTMLSelectElement).value; apply(); });
+    bar.querySelector<HTMLInputElement>("[data-bloom]")?.addEventListener("change", (e) => { state.bloom = (e.target as HTMLInputElement).checked; reset(); });
+    bar.querySelector<HTMLInputElement>("[data-search]")?.addEventListener("input", (e) => { state.q = (e.target as HTMLInputElement).value.trim().toLowerCase(); reset(); });
+    more?.addEventListener("click", () => { state.limit += pageSize; apply(); });
+
+    apply();
   }
 </script>

@@ -87,6 +87,12 @@ const careRows = [
             </a>
           )}
         </div>
+        <div class="mt-3 flex items-center gap-4">
+          <button type="button" disabled title="Wishlists arrive with customer accounts" class="mono-label inline-flex cursor-not-allowed items-center gap-1.5 text-moss">
+            <span aria-hidden="true">♡</span> Save to wishlist
+          </button>
+          <span class="mono-label !normal-case !tracking-normal text-moss/70">with accounts, soon</span>
+        </div>
         {available ? (
           <p class="mono-label mt-3" style="color:var(--color-leaf)">{product.stock_qty} in cultivation, ready to ship</p>
         ) : (

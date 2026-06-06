@@ -1,0 +1,31 @@
+---
+import Base from "../layouts/Base.astro";
+import { SITE } from "../config/site";
+// STUB+FLAG (feature census: Contact form, unblock D-2.3.1). The form UI is real and
+// labelled; it submits nowhere until wired to the owner's inbox/handler in a later phase.
+---
+<Base title={`Contact — ${SITE.name}`} description={`Get in touch with ${SITE.name}.`}>
+  <section class="mx-auto max-w-[42rem] px-5 py-12">
+    <p class="eyebrow eyebrow--leaf">Contact</p>
+    <h1 class="latin mt-1 text-4xl text-ink">Talk to us about a plant</h1>
+    <p class="mt-2 text-ink/75">Questions about a specimen, an order, or growing advice? Send a note.</p>
+    <p class="mono-label mt-4 border border-line bg-paper-2/60 px-3 py-2">Preview: this form is a placeholder — it goes live to {SITE.name}'s inbox when the full site launches.</p>
+
+    <form class="mt-6 space-y-4" onsubmit="return false" aria-label="Contact form (preview)">
+      <div>
+        <label class="mono-label" for="c-name">Your name</label>
+        <input id="c-name" type="text" class="mt-1 w-full border border-line bg-paper px-3 py-2 text-ink" />
+      </div>
+      <div>
+        <label class="mono-label" for="c-email">Email</label>
+        <input id="c-email" type="email" class="mt-1 w-full border border-line bg-paper px-3 py-2 text-ink" />
+      </div>
+      <div>
+        <label class="mono-label" for="c-msg">Message</label>
+        <textarea id="c-msg" rows="5" class="mt-1 w-full border border-line bg-paper px-3 py-2 text-ink"></textarea>
+      </div>
+      <button type="submit" class="bg-conservatory px-5 py-2.5 text-sm tracking-wide text-paper hover:bg-petal transition-colors">Send message</button>
+    </form>
+    <p class="mt-6 text-sm text-ink/70">Prefer email? Write to <a class="text-conservatory hover:text-petal" href={`mailto:${SITE.email || ""}`}>{SITE.email || "the team"}</a>.</p>
+  </section>
+</Base>

@@ -1,0 +1,20 @@
+---
+import Base from "../layouts/Base.astro";
+import { SITE } from "../config/site";
+// STUB+FLAG (feature census: Accounts/login D-2.7.2, Wishlist D-2.7.2). Honest stub —
+// accounts arrive with the full store's data backend. No fake login form that goes nowhere.
+---
+<Base title={`Your account — ${SITE.name}`} description="Customer accounts at ${SITE.name}.">
+  <section class="mx-auto max-w-[42rem] px-5 py-16 text-center">
+    <p class="eyebrow eyebrow--leaf">Accounts</p>
+    <h1 class="latin mt-1 text-4xl text-ink">Sign-in is coming with the full store</h1>
+    <p class="mt-3 text-ink/75">
+      Customer accounts — order history, saved wishlists, and faster checkout — arrive when the
+      complete {SITE.name} store goes live. For now, browse freely; nothing here requires a login.
+    </p>
+    <div class="mt-7 flex justify-center gap-4">
+      <a href="/shop/" class="bg-conservatory px-5 py-2.5 text-sm tracking-wide text-paper hover:bg-petal transition-colors">Browse orchids</a>
+      <a href="/conservatory/" class="border border-conservatory px-5 py-2.5 text-sm tracking-wide text-conservatory hover:bg-conservatory hover:text-paper transition-colors">Join a notify list</a>
+    </div>
+  </section>
+</Base>

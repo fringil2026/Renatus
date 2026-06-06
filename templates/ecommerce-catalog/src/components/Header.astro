@@ -15,7 +15,7 @@ const active = (href: string) => path === href || (href !== "/" && path.startsWi
       <span class="latin text-2xl leading-none text-paper">{SITE.name}</span>
       <span class="mono-label !text-paper/60 hidden sm:inline">est. herbarium</span>
     </a>
-    <nav class="flex items-center gap-6">
+    <nav class="flex items-center gap-5 sm:gap-6">
       {nav.map((n) => (
         <a
           href={n.href}
@@ -25,6 +25,7 @@ const active = (href: string) => path === href || (href !== "/" && path.startsWi
           ]}
         >{n.label}</a>
       ))}
+      <a href="/account/" class:list={["mono-label !text-paper/70 hover:!text-petal hidden sm:inline", active("/account/") && "!text-petal"]} title="Customer accounts — coming with the full store">Sign in</a>
     </nav>
   </div>
   <div class="botanical-rule--green botanical-rule"></div>

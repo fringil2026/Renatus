@@ -3,7 +3,7 @@ import Base from "../../layouts/Base.astro";
 import FilterBar from "../../components/FilterBar.astro";
 import SpecimenCard from "../../components/SpecimenCard.astro";
 import { SITE } from "../../config/site";
-import { products } from "../../lib/products";
+import { products, latin } from "../../lib/products";
 import { breadcrumbSchema } from "../../lib/schema";
 
 const all = products();
@@ -25,7 +25,7 @@ const crumbs = breadcrumbSchema([
   <FilterBar />
 
   <section class="mx-auto max-w-[75rem] px-5 py-9">
-    <div class="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+    <div data-grid data-page-size="9" class="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
       {all.map((p, i) => (
         <div
           data-card
@@ -33,6 +33,8 @@ const crumbs = breadcrumbSchema([
           data-difficulty={p.difficulty}
           data-bloom={String(p.bloom_now && p.stock_qty > 0)}
           data-stock={String(p.stock_qty > 0)}
+          data-name={`${latin(p)} ${p.common_name}`.toLowerCase()}
+          data-price={String(p.price_cents)}
           data-search={`${p.genus} ${p.species} ${p.common_name} ${p.origin}`.toLowerCase()}
         >
           <SpecimenCard product={p} plateNo={i + 1} />
@@ -42,5 +44,10 @@ const crumbs = breadcrumbSchema([
     <p data-empty hidden class="botanical-rule mt-2 pt-8 text-center text-moss">
       No specimens match those filters — try widening them.
     </p>
+    <div class="mt-8 text-center">
+      <button data-loadmore hidden type="button" class="border border-conservatory px-5 py-2 text-sm tracking-wide text-conservatory hover:bg-conservatory hover:text-paper transition-colors">
+        Load more orchids
+      </button>
+    </div>
   </section>
 </Base>

@@ -10,14 +10,17 @@ import { SITE } from "../config/site";
     <div>
       <p class="mono-label !text-paper/50">Catalogue</p>
       <ul class="mt-2 space-y-1.5 text-sm">
-        <li><a href="/shop/" class="hover:text-petal">The Catalogue</a></li>
-        <li><a href="/conservatory/" class="hover:text-petal">The Conservatory</a></li>
+        <li><a href="/shop/" class="hover:text-petal">Browse orchids</a></li>
+        <li><a href="/care/" class="hover:text-petal">Care guides</a></li>
+        <li><a href="/conservatory/" class="hover:text-petal">Currently growing</a></li>
       </ul>
     </div>
     <div>
       <p class="mono-label !text-paper/50">Contact</p>
       <ul class="mt-2 space-y-1.5 text-sm">
-        <li><a href={`mailto:${SITE.email}`} class="hover:text-petal">{SITE.email}</a></li>
+        <li><a href="/contact/" class="hover:text-petal">Contact us</a></li>
+        <li><a href="/account/" class="hover:text-petal">Sign in</a></li>
+        {SITE.email && <li><a href={`mailto:${SITE.email}`} class="hover:text-petal">{SITE.email}</a></li>}
         {SITE.instagram && <li><a href={SITE.instagram} class="hover:text-petal">Instagram</a></li>}
       </ul>
     </div>
