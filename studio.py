@@ -364,11 +364,19 @@ def creative_clause(input_mode):
            "NEVER copy the reference's trade dress (logo, exact palette, signature layout, distinctive "
            "UI). Mode-B originality guardrail.")
     return ("DESIGN MODE = CREATIVE (the Overhaul — the maximal swing): reimagine FROM SCRATCH with full "
-            "creative craft — graphic-heavy, disciplined richness, an editorial art-directed expression "
-            f"well beyond the standard clean build. {src} INVARIANTS HOLD UNCHANGED: the parity floor "
-            "(every CARRY-OVER feature) stays; every studio + archetype Hard rule stays; the swing is "
-            "EXPRESSION-ONLY (layout / type / color / motion / graphics), never facts, features, or "
-            "guardrails. Still pass the full Design QA Gate and name the brand moment.")
+            "creative craft = BOTH (1) disciplined graphic richness (editorial art direction dialled up: "
+            "oversized type as artwork, full-bleed colour interludes, layered composition) AND (2) smooth "
+            "modern interactivity — section-based scroll narrative, scroll-reveal animations "
+            "(IntersectionObserver + CSS, no heavy library), hover category tiles as the 'shop by' entry, "
+            "slide-out drawers (cart/wishlist/filters/mobile-nav, transforms, no reloads), a condensing "
+            "sticky header + smooth anchored nav, and ONE signature motion moment. Motion SERVES "
+            f"navigation not decoration. {src} INVARIANTS HOLD UNCHANGED: the parity floor (every "
+            "CARRY-OVER feature) stays; every studio + archetype Hard rule stays; prefers-reduced-motion "
+            "honoured absolutely + keyboard/screen-reader paths unaffected; the swing is EXPRESSION-ONLY "
+            "(layout / type / colour / motion / interactivity / graphics), never facts, features, or "
+            "guardrails; photography stays resolution-limited (smoothness from motion + spacing + graphics, "
+            "never upscaled photos). Pass the full Design QA Gate — including whether the navigation/motion "
+            "layer lands — and name the brand moment. Full spec: ECOMMERCE-GUIDELINES §5.9.")
 
 def overhaul_runbook(slug, input_mode):
     return (f"OVERHAUL (creative reimagining) for {slug}. Assemble — or re-assemble — the prototype per "

@@ -105,9 +105,14 @@ keep their own character). The toolkit:
   by resolution — only high-res photos get the big slots; low-res/no-photo items take smaller,
   type-forward cards rather than being blown up.
 - **Full-bleed color interlude bands** between sections to pace the page and reset the eye.
-- **Staggered reveals and refined hover states** — always gated by `prefers-reduced-motion`.
-- **ONE signature micro-interaction per client** — a single deliberate motion/feedback flourish
-  that becomes the site's tell. Not a motion circus; exactly one.
+- **Smooth modern interactivity** — refined hover states + staggered scroll-reveals (CSS /
+  IntersectionObserver, no heavy library, `prefers-reduced-motion` honoured); and in CREATIVE /
+  Overhaul mode the full navigation/motion layer: section-based scroll narrative, hover category
+  tiles as the "shop by" entry, slide-out drawers (cart / wishlist / filters / mobile-nav), a
+  condensing sticky header + smooth anchored nav — INCLUDING the **ONE signature motion moment**
+  (exactly one flourish that becomes the site's tell). Motion serves navigation, never decoration.
+  This is part of the SAME creative-mode definition as the graphic richness above — full spec:
+  ECOMMERCE-GUIDELINES §5.9.
 
 **Concept placement (extends the studio ground rules):** each commerce client's named concept must
 state WHERE its brand moment LIVES — the opening, the catalog, or the product page — so the moment
@@ -115,4 +120,7 @@ is intentional, not incidental.
 
 **Design QA Gate for commerce builds (extends, doesn't replace, the global gate):** the audit must
 explicitly confirm the brand moment EXISTS and LANDS — name it, name where it lives, and answer
-honestly whether it's memorable. A commerce build with no brand moment fails the gate.
+honestly whether it's memorable. A commerce build with no brand moment fails the gate. In creative /
+Overhaul mode that SAME question also asks whether the navigation/motion layer lands (section
+narrative, scroll-reveals, hover tiles, drawers, condensing header) — smooth, purposeful, and
+reduced-motion-safe; not a second separate question.

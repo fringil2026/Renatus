@@ -232,21 +232,42 @@ letter) becomes the recorded concept; an experimental choice carries a one-line 
 direction is unconventional; validate with the owner early"). A full-build-from-scratch auto-accepts
 Board B; the wow lever never fires automatically.
 
-### 5.8 The creativity model — ONE hierarchy [HARD]
+### 5.9 The creativity model — ONE hierarchy [HARD]
 Three tiers, no overlaps. "Creative mode" and "the Overhaul button" are the SAME capability reached
 two ways — never two features.
 - **STANDARD** — default; clean, purpose-fit; passes the full Design QA Gate + names the brand moment.
 - **PUSH FURTHER** — incremental: the 🔥 lever generates ONE bolder board beyond A/B/C (D, then E; cap
   two). A board generator at standard effort, not a build mode.
-- **OVERHAUL / CREATIVE** — the maximal swing: full creative craft (graphic-heavy, disciplined
-  richness) + a from-scratch reimagining. ONE flag `design_mode: creative`, reachable via the
-  **Creative toggle at build start** OR the **🎨 Overhaul button** on the boards card. Both offer the
-  SAME two input modes: **"Claude develops it"** or **"I provide a starting point"**
+- **OVERHAUL / CREATIVE** — the maximal swing: a from-scratch reimagining with full creative craft,
+  which means BOTH dimensions of ONE ambition:
+  1. **Disciplined graphic richness** — the editorial art direction of §5.2 dialled up (oversized type
+     as artwork, full-bleed colour interludes, layered composition), held to the distinctiveness bar
+     (§5.6) and the clean-expression discipline (§5.3).
+  2. **Smooth modern interactivity** — the navigation/motion layer (principles & feel ONLY from study
+     of well-made orchid vendors — atlas exotics, krull-smith, palmer orchids — never their markup,
+     theme, or trade dress):
+     - section-based scroll narrative — distinct, spacious zones that arrive on scroll;
+     - scroll-reveal animations — IntersectionObserver + CSS, no heavy library;
+     - category tiles with refined hover states as the primary "shop by" entry;
+     - slide-out drawers for cart / wishlist / filters / mobile-nav — transforms, no page reloads;
+     - a sticky header that condenses on scroll + smooth anchored in-page navigation;
+     - the ONE signature motion moment — exactly one deliberate flourish that becomes the site's tell.
+  Reachable via the **Creative toggle at build start** OR the **🎨 Overhaul button** on the boards card.
+  Both offer the SAME two input modes: **"Claude develops it"** or **"I provide a starting point"**
   (`02-intake/overhaul-brief.md`; Mode-B guardrail — inspiration, never the reference's trade dress).
+- **Discipline (covers graphics AND motion alike — stated once, not per dimension):** motion SERVES
+  navigation, never decoration; it is CSS/transform-based and within the §17 performance floor;
+  `prefers-reduced-motion` is honoured absolutely; keyboard + screen-reader paths are unaffected; the
+  parity floor and every catalog/cart/filter FUNCTION are unchanged (interactivity is the EXPRESSION
+  of existing functions, never new ones); photography stays resolution-limited (§5.4) — smoothness
+  comes from motion + spacing + graphics, never upscaled photos.
 - **Three HARD invariants across all tiers:** the **parity floor** is untouched; **every Hard rule**
-  is untouched; the swing is **EXPRESSION-ONLY** (layout / type / color / motion / graphics), never
-  facts, features, or guardrails. (Implementation: `studio.py` `creative_clause()` feeds both
-  `full_build_runbook` and `overhaul_runbook`; SYSTEM.md §4.)
+  is untouched; the swing is **EXPRESSION-ONLY** (layout / type / colour / motion / interactivity /
+  graphics), never facts, features, or guardrails. (Implementation: `studio.py` `creative_clause()`
+  feeds both `full_build_runbook` and `overhaul_runbook`; SYSTEM.md §4.)
+- **Design QA Gate (creative):** the §5.7 audit gains — in the SAME brand-moment question, not a
+  separate one — "does the navigation/motion layer LAND: section narrative, scroll-reveals, hover
+  tiles, drawers, condensing header — smooth, purposeful, and reduced-motion-safe?"
 
 ---
 

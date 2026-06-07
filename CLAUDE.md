@@ -260,8 +260,10 @@ capability reached two ways.)
 - **PUSH FURTHER** — incremental. The 🔥 button on the concept-board decision generates ONE bolder
   board beyond A/B/C (Board D, then E; cap at two), still standard effort. A board generator, not a
   build mode.
-- **OVERHAUL / CREATIVE** — the maximal swing: full creative-mode craft (graphic-heavy, disciplined
-  richness) + a from-scratch reimagining. ONE capability (`design_mode: creative` in status.json),
+- **OVERHAUL / CREATIVE** — the maximal swing: a from-scratch reimagining with full creative-mode
+  craft = disciplined graphic richness **AND** smooth modern interactivity (section scroll narrative,
+  scroll-reveals, hover category tiles, slide-out drawers, condensing sticky header, ONE signature
+  motion moment — full spec ECOMMERCE-GUIDELINES §5.9). ONE capability (`design_mode: creative` in status.json),
   reachable TWO ways: (a) the **Creative** toggle at build start (Full build), or (b) the **🎨 Overhaul**
   button on the boards card. Both offer the SAME two input modes: **"Claude develops it"** or
   **"I provide a starting point"** (`02-intake/overhaul-brief.md`, with the Mode-B guardrail: take

@@ -138,7 +138,7 @@ button" are the SAME capability reached two ways:
 |---|---|---|---|
 | **STANDARD** | always (default) | clean, purpose-fit; full Design QA Gate + brand moment | — |
 | **PUSH FURTHER** (🔥) | on the boards card, after A/B/C exist | generates ONE bolder board (D, then E; cap 2) — a board generator, standard effort | — |
-| **OVERHAUL / CREATIVE** (🎨) | Full-build creative toggle (build start) **AND** the Overhaul button (boards card) | `design_mode: creative` — full creative craft + from-scratch reimagining | "Claude develops it" · "I provide a starting point" (`overhaul-brief.md`, Mode-B trade-dress guardrail) |
+| **OVERHAUL / CREATIVE** (🎨) | Full-build creative toggle (build start) **AND** the Overhaul button (boards card) | `design_mode: creative` — from-scratch reimagining with full creative craft = **disciplined graphic richness + smooth interactivity** (section scroll narrative, scroll-reveals, hover category tiles, slide-out drawers, condensing sticky header, ONE signature motion moment) | "Claude develops it" · "I provide a starting point" (`overhaul-brief.md`, Mode-B trade-dress guardrail) |
 
 Code: ONE flag `design_mode` (status.json) set by BOTH `/api/full-build` (`design_mode` param) and
 `/api/overhaul` (`input_mode`); ONE `creative_clause()` feeds both `full_build_runbook(…, "creative")`
