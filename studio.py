@@ -353,7 +353,8 @@ def full_build_runbook(slug, variant):
     file. Authored to make every recommended decision automatically ONLY for from-scratch."""
     auto = ("This is FROM-SCRATCH: make every recommended decision automatically — if the "
             "'Choose the design concept' decision is still OPEN, resolve it to the RECOMMENDED "
-            "option (record that the full build auto-accepted it) and do NOT wait."
+            "option (Board B, the 'confident' board; record that the full build auto-accepted it) "
+            "and do NOT wait. 'Push further' is a human lever; the full build never escalates on its own."
             if variant == "from-scratch" else
             "This is FROM-PROTOTYPE: PRESERVE the existing prototype EXACTLY — keep every processed "
             "edit, the chosen concept, and all design decisions. Run ONLY the steps that are missing. "
@@ -424,6 +425,27 @@ def read_concept_boards(cdir):
     for b in m.get("boards", []):
         b["url"] = f"{base}/{b.get('path','').lstrip('/')}" if base else ""
     return m
+
+def push_further_runbook(slug, letter):
+    """The 'Push further' chain: an experimental Board <letter> BEYOND the current bold board."""
+    return (
+        f"PUSH FURTHER — generate experimental concept Board {letter.upper()} for {slug}, going BEYOND "
+        f"the current bold board (C). Permission granted to break conservative commerce conventions: "
+        f"asymmetry, oversized type as the ENTIRE hero, an unconventional navigation metaphor, one "
+        f"theatrical interactive moment. STILL obey the HARD rules: NO upscaled imagery (type-led where "
+        f"photography is weak), reduced-motion honored, catalogue parity reachable, accessible contrast, "
+        f"explicit language, ZERO banned generic patterns. Steps: (1) append a board to "
+        f"clients/{slug}/02-intake/concepts/concepts.json with letter '{letter}', a fresh id, "
+        f"tier 'experimental', recommended false, a DISTINCT type_attitude + structural_idea, palette, "
+        f"fonts, nav, hero copy, band, and representative type-led products (never fabricate real client "
+        f"facts); (2) run `python3 .claude/skills/site-baseline/scripts/concept_boards.py clients/{slug}`; "
+        f"(3) deploy `wrangler pages deploy clients/{slug}/02-intake/concepts/site --project-name "
+        f"ws-{slug} --commit-dirty=true` and write the deployed base into boards.json deploy_url; "
+        f"(4) APPEND one option to the OPEN concept decision YAML in "
+        f"clients/{slug}/02-intake/decisions/ — id=new board id, label "
+        f"'{letter.upper()} — <name> (experimental)', one-line consequence, tag: experimental, "
+        f"board_url, thumb=<letter>-<id>.png. Do NOT touch existing options or the recommendation "
+        f"(wow is a human lever; the recommendation stays Board B). Report the new board URL.")
 
 def has_binding_spec(cdir):
     specs = cdir / "02-intake" / "specs"
@@ -579,9 +601,9 @@ def parse_decision(path):
             d["context"].append(s[2:].strip().strip('"')); continue
         if section == "options":
             if s.startswith("- "):
-                cur = {"id": "", "label": "", "consequence": "", "next": "", "board_url": "", "thumb": ""}
+                cur = {"id": "", "label": "", "consequence": "", "next": "", "board_url": "", "thumb": "", "tag": ""}
                 d["options"].append(cur); s = s[2:].strip()
-            mm = re.match(r'^(id|label|consequence|next|board_url|thumb):\s*(.*)$', s)
+            mm = re.match(r'^(id|label|consequence|next|board_url|thumb|tag):\s*(.*)$', s)
             if mm and cur is not None:
                 cur[mm.group(1)] = mm.group(2).strip().strip('"')
     return d
@@ -596,6 +618,12 @@ def list_open_decisions():
         for f in sorted(dd.glob("*-OPEN-*.yaml")):
             dec = parse_decision(f)
             dec.update({"scope": scope, "file": f.name})
+            boards = [o for o in dec["options"] if o.get("thumb")]
+            dec["is_boards"] = bool(boards)
+            dec["board_count"] = len(boards)
+            # "Push further" escalates Board D then E — cap at two escalations (a,b,c + d + e = 5)
+            dec["can_escalate"] = dec["is_boards"] and len(boards) < 5 and scope != STUDIO_KEY
+            dec["busy"] = scope in TASKS
             out.append(dec)
     return out
 
@@ -626,6 +654,64 @@ def resolve_decision(scope, fname, choice):
                 threading.Thread(target=run_advance, args=(scope, dec["resume_job"], "resumed job", None), daemon=True).start()
     return True, dest.name
 
+# ---------------- incidents (diagnose-then-fix; mirrors decisions/edits) ----------------
+def incidents_dir(scope):
+    return (ROOT / ".claude" / "incidents") if scope == STUDIO_KEY else (CLIENTS / scope / "02-intake" / "incidents")
+
+def open_incident_count(slug):
+    dd = incidents_dir(slug)
+    return len(list(dd.glob("*-OPEN-*.md"))) if dd.exists() else 0
+
+def _incident_symptom(path):
+    try:
+        lines = path.read_text(errors="ignore").splitlines()
+    except Exception:
+        return ""
+    for i, l in enumerate(lines):
+        if l.strip().upper().startswith("## SYMPTOM"):
+            for j in range(i + 1, len(lines)):
+                if lines[j].strip():
+                    return lines[j].strip()[:140]
+    return ""
+
+def list_open_incidents():
+    out = []
+    scopes = [STUDIO_KEY] + ([d.name for d in CLIENTS.iterdir() if d.is_dir() and not d.name.startswith(".")] if CLIENTS.exists() else [])
+    for scope in scopes:
+        dd = incidents_dir(scope)
+        if not dd.exists():
+            continue
+        for f in sorted(dd.glob("*-OPEN-*.md")):
+            out.append({"scope": scope, "file": f.name, "symptom": _incident_symptom(f), "busy": scope in TASKS})
+    return out
+
+def create_incident(scope, symptom):
+    symptom = (symptom or "").strip()
+    if not symptom:
+        return False, "empty symptom"
+    dd = incidents_dir(scope); dd.mkdir(parents=True, exist_ok=True)
+    n = len(list(dd.glob("*.md"))) + 1
+    short = re.sub(r"[^a-z0-9]+", "-", symptom.lower()).strip("-")[:32] or "issue"
+    sid = "STUDIO" if scope == STUDIO_KEY else scope.upper()
+    tmpl = ROOT / "templates" / "incident-template.md"
+    body = tmpl.read_text() if tmpl.exists() else "## SYMPTOM\n\n## DIAGNOSTIC\n\n## ROOT CAUSE\n\n## FIX PLAN\n\n## VERIFICATION\n\n## RESOLUTION\n"
+    body = (body.replace("WS-INC-<SLUG-OR-STUDIO>-NNN", f"WS-INC-{sid}-{n:03d}")
+                .replace("<slug | studio>", "studio" if scope == STUDIO_KEY else scope)
+                .replace("<YYYY-MM-DD>", now()[:10])
+                .replace("<The human's words VERBATIM> — where observed: <URL / screen / command>.",
+                         f"{symptom} — where observed: (reported via dashboard)."))
+    f = dd / f"{n:03d}-OPEN-{short}.md"
+    f.write_text(body)
+    # enqueue the headless diagnostic (client scope; mirrors the decisions resume pattern)
+    if scope != STUDIO_KEY:
+        bump(CLIENTS / scope, msg=f"incident OPENED: {f.name} — diagnostic enqueued")
+        with TASK_LOCK:
+            if scope not in TASKS:
+                cmd = f"Diagnose incident {n:03d} for {scope}"
+                TASKS[scope] = {"kind": "incident diagnostic", "label": cmd, "started": now(), "tail": [], "proc": None}
+                threading.Thread(target=run_advance, args=(scope, cmd, "incident diagnostic", None), daemon=True).start()
+    return True, f.name
+
 def list_clients():
     out = []
     if not CLIENTS.exists(): return out
@@ -654,6 +740,7 @@ def list_clients():
                     "backend_cfg": (lambda c: {"status": c["status"], "version": c["version"], "mode": c.get("mode", "")} if c else None)(parse_backend_config(d)),
                     "busy": d.name in TASKS,
                     "decisions_open": open_decision_count(d.name),
+                    "incidents_open": open_incident_count(d.name),
                     "documents": [n for n in ("redesign-plan.md", "deliverables-request.md",
                                               "production-roadmap.md", "backend-config.yaml")
                                   if (d / "02-intake" / n).exists()],
@@ -717,7 +804,15 @@ button.adv[disabled]{color:var(--muted);border-color:var(--line);cursor:not-allo
 .run{font-family:var(--m);font-size:.66rem;color:#7fd18f}
 .rehbadge{font-family:var(--m);font-size:.56rem;letter-spacing:.12em;background:#7a4dff;color:#fff;padding:.15em .5em;border-radius:2px}
 .needbadge{font-family:var(--m);font-size:.58rem;letter-spacing:.1em;background:#c0392b;color:#fff;padding:.18em .55em;border-radius:2px}
+.incbadge{font-family:var(--m);font-size:.58rem;letter-spacing:.1em;background:#b8740a;color:#fff;padding:.18em .55em;border-radius:2px}
 .needstrip{border:1px solid #c0392b;background:#1a0f0f;margin:0 0 1.4rem;padding:1rem 1.1rem}
+.needstrip.incstrip{border-color:#b8740a;background:#181206}
+.incstrip .needhead{color:#e6a44a}
+.report{display:flex;gap:.5rem;margin:.5rem 0 .2rem}
+.report input{flex:1;background:var(--ink,#181818);color:var(--paper,#eee);border:1px solid var(--line,#444);padding:.35em .6em;font-family:var(--b);font-size:.78rem}
+.report input:focus{outline:none;border-color:#b8740a}
+.shreport{display:flex;gap:.5rem;margin:.6rem 0 0;max-width:46rem}
+.shreport input{flex:1;background:#181818;color:#eee;border:1px solid #444;padding:.35em .6em;font-family:var(--b);font-size:.78rem}
 .needhead{font-family:var(--d);text-transform:uppercase;color:#ff6b5e;letter-spacing:.04em;margin-bottom:.7rem}
 .deccard{border-top:1px solid #3a2222;padding:.8rem 0}
 .decq{font-size:.95rem}.decscope{font-family:var(--m);font-size:.6rem;color:var(--muted);border:1px solid var(--line);padding:.05em .4em;margin-left:.4rem}
@@ -785,6 +880,13 @@ button.adv.fb[disabled]{color:var(--muted);border-color:var(--line);opacity:.6}
 .blink{color:var(--amber);font-family:var(--m);font-size:.66rem;text-decoration:none}
 .bchoose{background:var(--amber);color:var(--ink);border:1px solid var(--amber);font-family:var(--b);font-weight:600;font-size:.74rem;text-transform:none;padding:.3em .8em}
 .bchoose:hover{background:transparent;color:var(--amber)}
+.bcard.exp{border-color:#ff7a3d}
+.bexp{position:absolute;top:.4rem;left:.4rem;background:#ff7a3d;color:#1a0d06;font-family:var(--m);font-size:.56rem;letter-spacing:.06em;text-transform:uppercase;padding:.15em .5em;font-weight:600}
+.pushrow{margin-top:.8rem;display:flex;gap:.7rem;align-items:center;flex-wrap:wrap}
+.pushbtn{background:#ff7a3d;color:#1a0d06;border:1px solid #ff7a3d;font-family:var(--d);font-weight:700;text-transform:uppercase;letter-spacing:.04em;font-size:.82rem;padding:.4em 1em}
+.pushbtn:hover:not([disabled]){background:transparent;color:#ff7a3d}
+.pushbtn[disabled]{opacity:.5;cursor:not-allowed}
+.pushnote{font-family:var(--m);font-size:.64rem;color:var(--muted)}
 </style></head><body><div class="wrap">
 <h1>Web Studio</h1><p class="sub">Two human steps · everything else automated</p>
 <p class="stats" id="stats"></p>
@@ -957,13 +1059,14 @@ async function load(){
   const d = await api('/api/clients'); DATA = d;
   document.getElementById('stats').textContent =
     `active scrapes ${d.running}/${d.max} · queued ${d.queued} · archived projects ${d.archived}`;
-  renderNeeds(d.decisions||[]);
+  renderNeeds(d.decisions||[], d.incidents||[]);
   const el = document.getElementById('list');
   if(!d.clients.length){ el.innerHTML='<p class="empty">No active clients — start one above.</p>'; return; }
   el.innerHTML = d.clients.map(c=>`<div class="row${c.done?' fin':''}">
     <div class="top"><div><span class="nm">${c.name}</span> <span class="dom">${c.domain}</span></div>
     <div class="btns"><span class="chip">${c.stage}</span>
       ${c.decisions_open?`<span class="needbadge">${c.decisions_open} decision${c.decisions_open>1?'s':''}</span>`:''}
+      ${c.incidents_open?`<span class="incbadge">${c.incidents_open} incident${c.incidents_open>1?'s':''}</span>`:''}
       ${c.busy?'<span class="run">● running…</span>':''}
       ${c.advance?`<button class="adv" ${c.advance.enabled?'':'disabled'} title="${(c.advance.tooltip||c.advance.desc||'').replace(/"/g,'&quot;')}" onclick="openAdvance('${c.slug}')">${c.advance.label}</button>${c.advance.badge?`<span class="rehbadge">${c.advance.badge}</span>`:''}<span class="copy" title="Copy terminal command" onclick="cpCmd('${c.slug}')">⧉</span>`:''}
       ${c.full_build?`<button class="adv fb" ${c.full_build.enabled?'':'disabled'} title="${(c.full_build.tooltip||c.full_build.desc||'').replace(/"/g,'&quot;')}" onclick="openFullBuild('${c.slug}')">${c.full_build.resumable?'⟳ ':'⚡ '}${c.full_build.label}</button>`:''}
@@ -981,6 +1084,10 @@ async function load(){
     ${c.preview_url?`<div class="prev"><a class="pvw" href="${c.preview_url}" target="_blank" rel="noopener">Preview ↗</a> <span class="copy" title="Copy URL" onclick="cp('${c.preview_url}')">⧉</span> <span class="pdate">${c.preview_rel||c.preview_at}</span>${c.preview_stale?' <span class="stale">⚠ last deploy failed</span>':(c.preview_behind?' <span class="stale">⚠ preview behind latest edits</span>':'')}</div>`:''}
     ${c.documents&&c.documents.length?`<div class="docs"><span class="mono-label">documents</span> ${c.documents.map(n=>`<button class="docbtn" onclick="openDoc('${c.slug}','${n}')">${n}</button>`).join(' ')}</div>`:''}
     ${c.concepts&&c.concepts.length?`<div class="docs"><span class="mono-label">concept boards</span> ${c.concepts.map(b=>`<a class="docbtn" href="${b.url||'#'}" target="_blank" rel="noopener" title="${esc(b.one_liner)}">${b.recommended?'★ ':''}${esc(b.name)} ↗</a><a class="docbtn" href="/api/concept-thumb?slug=${c.slug}&name=${esc(b.thumb_desktop)}" target="_blank" rel="noopener" title="desktop screenshot">🖼 png</a>`).join(' ')}</div>`:''}
+    <form class="report" onsubmit="return reportProblem(event,'${c.slug}')">
+      <input type="text" placeholder="Report a problem — what's broken? (becomes an incident, then a diagnostic)" required>
+      <button class="ghost">Report ⚑</button>
+    </form>
     <form class="drop" onsubmit="return up(event,'${c.slug}')">
       <input type="file" accept=".md" required>
       <label><input type="radio" name="dest-${c.slug}" value="specs" checked> specs</label>
@@ -1007,23 +1114,30 @@ async function answers(e,slug){ e.preventDefault();
   await api('/answers', {slug, t:e.target.querySelector('textarea').value}); load(); return false; }
 async function act(p,slug){ await api(p,{slug}); load(); }
 function cp(t){ navigator.clipboard&&navigator.clipboard.writeText(t); }
-function renderNeeds(decs){
+function renderNeeds(decs, incs){
+  incs = incs||[];
   const box=document.getElementById('needs');
-  if(!decs.length){ box.innerHTML=''; return; }
-  box.innerHTML=`<div class="needstrip"><div class="needhead">⬤ Needs your call · ${decs.length}</div>`+
+  if(!decs.length && !incs.length){ box.innerHTML=''; return; }
+  const incsHTML = !incs.length ? '' : `<div class="needstrip incstrip"><div class="needhead">⚑ Reported problems · ${incs.length}</div>`+incs.map(it=>`<div class="deccard"><div class="decq">${esc(it.symptom||it.file)} <span class="decscope">${it.scope==='__studio__'?'studio':esc(it.scope)}</span></div><div class="decreason">incident ${esc(it.file)} — ${it.busy?'diagnosing…':'open · diagnostic queued'}</div></div>`).join('')+`</div>`;
+  const decsHTML = !decs.length ? '' : `<div class="needstrip"><div class="needhead">⬤ Needs your call · ${decs.length}</div>`+
     decs.map(dn=>{
       const isBoards = dn.options.some(o=>o.thumb);   // visual concept-board decision
+      const pushRow = isBoards ? `<div class="pushrow">${
+          dn.can_escalate
+            ? `<button class="pushbtn" ${dn.busy?'disabled':''} onclick="pushFurther('${dn.scope}')" title="Generate an experimental Board ${'ABCDE'[dn.board_count]||'D'} beyond the bold board — generative, no confirm">🔥 Push further</button><span class="pushnote">not landing? generate an experimental board (${dn.board_count}/5)</span>`
+            : `<span class="pushnote">Two escalations reached (Board E exists) — the fix is a conversation now, not another board.</span>`
+        }${dn.busy?'<span class="run">● generating…</span>':''}</div>` : '';
       const opts = isBoards
         ? `<div class="decboards">${dn.options.map(o=>`
-            <div class="bcard ${o.id===dn.recommendation?'rec':''}">
+            <div class="bcard ${o.id===dn.recommendation?'rec':''} ${o.tag==='experimental'?'exp':''}">
               <a class="bthumblink" href="${o.board_url||'#'}" target="_blank" rel="noopener" title="Open the live board ↗">
                 <img class="bthumb" loading="lazy" src="/api/concept-thumb?slug=${encodeURIComponent(dn.scope)}&name=${encodeURIComponent(o.thumb)}" alt="${esc(o.label||o.id)} board">
-                ${o.id===dn.recommendation?'<span class="brec">★ recommended</span>':''}</a>
+                ${o.id===dn.recommendation?'<span class="brec">★ recommended</span>':o.tag==='experimental'?'<span class="bexp">🔥 experimental</span>':''}</a>
               <div class="bname">${esc(o.label||o.id)}</div>
               <div class="bone">${esc(o.consequence)}</div>
               <div class="brow"><a class="blink" href="${o.board_url||'#'}" target="_blank" rel="noopener">Open board ↗</a>
                 <button class="bchoose" onclick="resolveDec('${dn.scope}','${dn.file}','${o.id}')">Choose this</button></div>
-            </div>`).join('')}</div>`
+            </div>`).join('')}</div>${pushRow}`
         : `<div class="decopts">${dn.options.map(o=>`<button class="${o.id===dn.recommendation?'decrec':'decopt'}" onclick="resolveDec('${dn.scope}','${dn.file}','${o.id}')" title="${esc(o.consequence)}">${o.id===dn.recommendation?'★ ':''}${esc(o.label||o.id)}</button>`).join('')}</div>`;
       return `<div class="deccard">
       <div class="decq">${esc(dn.question)} <span class="decscope">${dn.scope==='__studio__'?'studio':esc(dn.scope)}</span></div>
@@ -1031,10 +1145,25 @@ function renderNeeds(decs){
       ${opts}
       ${dn.reason?`<div class="decreason">recommendation: ${esc(dn.reason)}</div>`:''}
     </div>`;}).join('')+`</div>`;
+  box.innerHTML = decsHTML + incsHTML;
 }
 async function resolveDec(scope,file,choice){
   const r=await api('/api/decisions/resolve',{scope,file,choice});
   if(r.error) alert('Could not resolve: '+r.error); else load();
+}
+async function reportProblem(e, scope){
+  e.preventDefault();
+  const inp=e.target.querySelector('input'); const symptom=(inp.value||'').trim();
+  if(!symptom) return false;
+  const r=await api('/api/incident',{scope,symptom});
+  if(r.error){ alert('Could not file: '+r.error); }
+  else { inp.value=''; alert('Incident '+r.incident+' filed — diagnostic running. It will diagnose before any fix.'); load(); }
+  return false;
+}
+async function pushFurther(scope){
+  const r=await api('/api/push-further',{slug:scope});
+  if(r.error){ alert('Push further: '+r.error); }
+  else { alert('Generating an experimental board — watch the row log; the new option joins this card when it lands.'); load(); }
 }
 function md2html(src){
   const ec=s=>s.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
@@ -1105,7 +1234,8 @@ class H(BaseHTTPRequestHandler):
             self._send(json.dumps({"clients": list_clients(), "running": running,
                                    "max": MAX_SCRAPES, "queued": queued,
                                    "archived": archived, "server": IS_SERVER,
-                                   "ttyd_url": TTYD_URL, "decisions": list_open_decisions()}), "application/json")
+                                   "ttyd_url": TTYD_URL, "decisions": list_open_decisions(),
+                                   "incidents": list_open_incidents()}), "application/json")
         elif path == "/api/chat":
             q = parse_qs(urlparse(self.path).query)
             slug = q.get("slug", [""])[0]
@@ -1216,6 +1346,31 @@ class H(BaseHTTPRequestHandler):
                              args=(slug, full_build_runbook(slug, variant), "full build", "full_build_failed"),
                              daemon=True).start()
             return self._send(json.dumps({"ok": True, "variant": variant}), "application/json")
+        elif path == "/api/push-further":
+            # The "🔥 Push further" wow lever — generative (no slug confirm). Produces Board D, then E.
+            slug = slugify(d.get("slug", ""))
+            cdir = CLIENTS / slug
+            if not cdir.exists():
+                return self._send(json.dumps({"error": "no such client"}), "application/json", 404)
+            dd = decisions_dir(slug)
+            open_board_dec = any(o.get("thumb") for f in (dd.glob("*-OPEN-*.yaml") if dd.exists() else [])
+                                 for o in parse_decision(f)["options"])
+            if not open_board_dec:
+                return self._send(json.dumps({"error": "no open concept-board decision to escalate"}), "application/json", 400)
+            m = read_concept_boards(cdir) or {}
+            count = len(m.get("boards", []))
+            if count >= 5:   # a,b,c + d + e — two escalations is the cap
+                return self._send(json.dumps({"error": "two escalations reached (Board E exists) — the fix is a conversation now, not another board; open a decision note instead"}), "application/json", 400)
+            letter = "abcde"[count]   # 3 -> d, 4 -> e
+            with TASK_LOCK:
+                if slug in TASKS:
+                    return self._send(json.dumps({"error": "a Claude task is already running for this client"}), "application/json", 409)
+                TASKS[slug] = {"kind": "push further", "label": f"Board {letter.upper()} (experimental)", "started": now(), "tail": [], "proc": None}
+            bump(cdir, msg=f"PUSH FURTHER — generating experimental Board {letter.upper()}")
+            threading.Thread(target=run_advance,
+                             args=(slug, push_further_runbook(slug, letter), "push further", "push_further_failed"),
+                             daemon=True).start()
+            return self._send(json.dumps({"ok": True, "letter": letter}), "application/json")
         elif path == "/api/chat":
             slug = d.get("slug", "")
             key = STUDIO_KEY if slug in ("", "studio") else slugify(slug)
@@ -1273,6 +1428,10 @@ class H(BaseHTTPRequestHandler):
             scope = d.get("scope", ""); scope = STUDIO_KEY if scope in ("", "studio", STUDIO_KEY) else slugify(scope)
             ok, msg = resolve_decision(scope, d.get("file", ""), d.get("choice", ""))
             return self._send(json.dumps({"ok": ok, "error": None if ok else msg, "resolved": msg if ok else None}), "application/json", 200 if ok else 400)
+        elif path == "/api/incident":
+            scope = d.get("scope", ""); scope = STUDIO_KEY if scope in ("", "studio", STUDIO_KEY) else slugify(scope)
+            ok, msg = create_incident(scope, d.get("symptom", ""))
+            return self._send(json.dumps({"ok": ok, "error": None if ok else msg, "incident": msg if ok else None}), "application/json", 200 if ok else 400)
         elif path == "/api/rehearsal":
             slug = slugify(d.get("slug", "")); cdir = CLIENTS / slug
             action = d.get("action", "")

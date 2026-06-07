@@ -211,26 +211,46 @@ no fabricated client facts:
    - **Scope summary**: archetype, playbook routed, binding specs found, phases anticipated.
 2. `deliverables-request.md` — generated HERE (moved out of Command 1) by the same filtering/
    specializing rules; §2.1/2.2 always BLOCKING; auditable "Omitted" list.
-3. **CONCEPT BOARDS — three visual mockups, not documents.** For each named concept in the
-   redesign plan, build a single static HTML homepage IMPRESSION (hero + nav + 3–4 product cards +
-   one section band), each genuinely distinct in palette/type/layout per its concept, using the
-   client's REAL scraped images at their largest honest variants (type-led where photography is
-   weak, per the brand-moment rules) and evidence-derived brand colours. Each board is labelled
-   "CONCEPT BOARD — not the final build" + its name + one-liner, carries `<meta robots noindex>`,
-   and has no JS. Pipeline: write `02-intake/concepts/concepts.json` (structured: per board —
-   letter/id/name/recommended/palette/fonts/signature/layout/nav/hero/band/products[]; `images:[]`
-   ⇒ type-led), then run `python3 .claude/skills/site-baseline/scripts/concept_boards.py
-   clients/<slug>` (emits the board HTML under `02-intake/concepts/site/`, desktop+390px Playwright
-   screenshots to `02-intake/concepts/<letter>-<id>.png`, and the `boards.json` manifest). DEPLOY
-   the boards to the client's preview project so they live at `ws-<slug>.pages.dev/concepts/a|b|c/`
-   (`wrangler pages deploy 02-intake/concepts/site --project-name ws-<slug>`; create the project
-   first if it doesn't exist), then write the deployed base into `boards.json` `deploy_url`.
+3. **CONCEPT BOARDS — three visual mockups across a CREATIVITY SPECTRUM, not documents.** Build a
+   single static HTML homepage IMPRESSION per concept (hero + nav + 3–4 product cards + one section
+   band), type-led where photography is weak (brand-moment rules), using the client's REAL scraped
+   images at their largest honest variants + evidence-derived brand colours. The three boards span a
+   DELIBERATE spectrum and MUST differ STRUCTURALLY, not just in palette:
+   - **A · CLASSIC** — the safe, conversion-proven expression a cautious owner says yes to instantly.
+   - **B · CONFIDENT** — the studio's RECOMMENDATION: distinctive, editorial, clearly designed.
+   - **C · BOLD** — pushes the concept hard: unconventional grid, dramatic type scale, a structural idea.
+   **Divergence test (binding):** the three boards must differ in at least **layout archetype AND
+   typographic attitude AND one structural idea each**. Three palettes on one layout is a GENERATION
+   FAILURE — regenerate. (The generator enforces this and exits non-zero on failure.) All three still
+   obey the ground rules: honest imagery, accessibility, explicit language, parity-compatible,
+   reduced-motion honored. Each board is labelled "CONCEPT BOARD — not the final build" + its tier,
+   carries `<meta robots noindex>`, no JS. Pipeline: write `02-intake/concepts/concepts.json`
+   (per board — letter/id/name/**tier** (classic|confident|bold|experimental)/recommended/**type_attitude**/
+   **structural_idea**/palette/fonts/signature/layout/nav/hero/band/products[]; exactly ONE base board
+   recommended = the confident one; `images:[]` ⇒ type-led), then run
+   `python3 .claude/skills/site-baseline/scripts/concept_boards.py clients/<slug>` (emits board HTML
+   under `02-intake/concepts/site/`, desktop+390px screenshots `02-intake/concepts/<letter>-<id>.png`,
+   `boards.json` with `divergence_pass`). DEPLOY to the preview project so boards live at
+   `ws-<slug>.pages.dev/concepts/a|b|c/` (`wrangler pages deploy 02-intake/concepts/site
+   --project-name ws-<slug>`; create the project first if needed), then write the deployed base into
+   `boards.json` `deploy_url`.
 Then OPEN the **VISUAL** concept decision (the inbox): **"Choose the design concept for <slug>"** —
-each option carries `board_url` (the live board) + `thumb` (its screenshot filename) so the
-dashboard renders the three screenshots as clickable thumbnails, plus a one-line consequence and a
-recommendation. The chosen option is what Command 1 step 0 records and builds. (Boards are
-disposable — see Command 1/6: the `/concepts/` routes drop at the next publish; the PNGs persist in
-`02-intake/concepts/` as the permanent record of what was offered and chosen.)
+each option carries `tier` (`tag:`), `board_url` (live board) + `thumb` (screenshot filename) so the
+dashboard renders the screenshots as clickable thumbnails, recommendation marked. The chosen option
+(whatever letter) is what Command 1 step 0 records and builds; an **experimental** choice also gets a
+one-line risk note in the redesign plan ("chosen direction is unconventional; validate with the owner
+early"). (Boards are disposable — Command 1/6: `/concepts/` routes drop at the next publish; the PNGs
+persist as the permanent record of what was offered and chosen.)
+   **THE WOW LEVER — "🔥 Push further" (optional, human-in-the-loop, appears only AFTER the 3 boards
+   exist).** A fourth control on the decision card enqueues a headless job (no slug confirm — it's
+   generative, not destructive) producing **Board D**: a deliberately experimental concept BEYOND
+   Board C — permission to break conservative commerce conventions (asymmetry, oversized type as the
+   entire hero, an unconventional navigation metaphor, one theatrical interactive moment) while still
+   respecting the HARD rules (no upscaled imagery, reduced-motion honored, parity reachable, no banned
+   patterns). D publishes at `/concepts/d/`, screenshots, and joins the card as a fourth option
+   labelled "experimental". The button can fire once more for **Board E**; **cap at two escalations** —
+   beyond E the fix is a conversation, not regeneration (open a decision note instead). Full-build
+   from-scratch is unaffected: it auto-accepts **Board B** (the recommendation); wow is a human lever.
 
 ## Command 10 — "Full build (<variant>) for <slug>" (one-click chained rehearsal build)
 The dashboard's **Full build** button triggers this as a headless `claude -p` job. TWO variants

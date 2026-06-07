@@ -85,18 +85,32 @@ step artifact `02-intake/full-build-progress.json` (`init_full_build`), the live
 `full_build_runbook`). TEST banners + cutover-refusal are unchanged.
 
 ## 4 · Concept boards (the visual concept decision)
-After the scrape, before any prototype, the human picks from THREE real designs, not documents.
-`.claude/skills/site-baseline/scripts/concept_boards.py` reads `02-intake/concepts/concepts.json`
-(per-board palette/fonts/signature/layout/products; `images:[]` ⇒ type-led, honest when photography
-is weak) and emits: distinct static board HTML under `02-intake/concepts/site/concepts/<letter>/`
-(noindex, no JS, "CONCEPT BOARD — not the final build" banner), desktop+390px Playwright screenshots
-(`<letter>-<id>.png`), and the `boards.json` manifest. The boards deploy to the preview project at
-`ws-<slug>.pages.dev/concepts/a|b|c/` (disposable — replaced at the first prototype publish; the PNGs
-persist). The concept decision YAML carries `board_url` + `thumb` per option, so the dashboard
-"Needs your call" card renders the screenshots as clickable thumbnails (served via
-`/api/concept-thumb`) with the recommendation marked; picking one resolves it as before and drives
-Assemble. A full-build-from-scratch generates + records the boards but auto-accepts the recommended
-concept without waiting.
+After the scrape, before any prototype, the human picks from real designs spanning a **creativity
+spectrum**, not documents. `.claude/skills/site-baseline/scripts/concept_boards.py` reads
+`02-intake/concepts/concepts.json` and emits distinct static board HTML under
+`02-intake/concepts/site/concepts/<letter>/` (noindex, no JS, "CONCEPT BOARD — not the final build"
+banner), desktop+390px Playwright screenshots, and `boards.json`. Boards deploy to
+`ws-<slug>.pages.dev/concepts/a|b|c/` (disposable — replaced at the first prototype publish; PNGs
+persist).
+
+**Mandatory divergence (the spectrum).** The three base boards are A·**classic** (safe,
+conversion-proven), B·**confident** (the recommendation), C·**bold** (pushes hard). Each `tier` maps
+to a STRUCTURALLY distinct archetype (`archetype_css`: classic = centered/symmetric + CTA; editorial
+= asymmetric + signature legend + featured-card grid; dramatic = oversized type + staggered grid;
+experimental = numbered-index nav + viewport hero + broken collage). `divergence_check()` is BINDING:
+the base boards must differ in layout archetype AND `type_attitude` AND `structural_idea`, with exactly
+one recommended — else the generator prints FAIL and exits non-zero (regenerate). Three palettes on one
+layout is a generation failure.
+
+**The wow lever — "🔥 Push further".** A fourth control on the decision card (only after the 3 boards
+exist; generative, no slug confirm) enqueues `/api/push-further` → a headless job producing **Board D**:
+experimental, BEYOND bold (break conventions; still honor the hard rules). D publishes at `/concepts/d/`,
+screenshots, and joins the card as a fourth `tag: experimental` option. Fires once more for **Board E**;
+**capped at two escalations** (a–e) — beyond that the studio refuses and points to a decision note. The
+concept decision YAML carries `tier`/`board_url`/`thumb` per option; the "Needs your call" card renders
+the screenshots as clickable thumbnails (served via `/api/concept-thumb`), recommendation + experimental
+badges marked. Choosing any letter resolves it as before; full-build-from-scratch auto-accepts Board B —
+wow stays human-in-the-loop.
 
 ## 5 · Troubleshooting workflow (incidents — diagnose THEN fix)
 When the human reports something broken, the studio does NOT start editing — it materializes an

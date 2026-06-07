@@ -207,6 +207,31 @@ brand moment named, placed, and landing; checked at desktop AND ~390px mobile; h
 "would a visitor remember this tomorrow?" The audit verbatim goes in the build report or the
 edit's Resolution.
 
+### 5.8 Concept-board divergence + the wow escalation [HARD]
+Before any prototype, the human chooses from VISUAL concept boards (homepage impressions, not
+documents) that span a deliberate CREATIVITY SPECTRUM:
+- **A · Classic** — the safe, conversion-proven expression a cautious owner says yes to immediately.
+- **B · Confident** — the studio's RECOMMENDATION: distinctive, editorial, clearly designed.
+- **C · Bold** — pushes the concept hard: unconventional grid, dramatic type scale, a structural idea.
+
+**Divergence test [HARD]:** the three base boards must differ in at least **layout archetype AND
+typographic attitude AND one structural idea each** — three palettes on one layout is a generation
+FAILURE, regenerate (the generator enforces this and exits non-zero). Exactly one base board (the
+confident one) is the recommendation. Every board stays honest: type-led where photography is weak
+(§5.4), accessible (§17), explicit language (§6), parity-compatible (§2), reduced-motion honored,
+zero banned patterns (§5.6). Boards are noindex, deploy at `ws-<slug>.pages.dev/concepts/a|b|c/`,
+and are disposable (replaced at the first prototype publish; the screenshots persist as the record).
+
+**The wow escalation — "Push further" [DEFAULT].** Circumstantial and human-in-the-loop: only after
+the three boards exist, the decision card offers a generative "🔥 Push further" lever (no confirm)
+that produces **Board D** — deliberately experimental, BEYOND Board C (asymmetry, oversized type as
+the entire hero, an unconventional navigation metaphor, one theatrical interactive moment) while
+still respecting every HARD rule above. It can fire once more for **Board E**; **cap at two
+escalations** — beyond that the fix is a conversation, not another board. The chosen board (any
+letter) becomes the recorded concept; an experimental choice carries a one-line risk note ("chosen
+direction is unconventional; validate with the owner early"). A full-build-from-scratch auto-accepts
+Board B; the wow lever never fires automatically.
+
 ---
 
 ## 6. CONTENT & LANGUAGE RULES
