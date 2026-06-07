@@ -49,6 +49,14 @@ zero products. When the evidence fingerprints Volusion, the ladder runs `scrape_
 (no proxy/CAPTCHA/token evasion — that boundary stays). Build a platform extractor to the diagnosed
 cause, not a guessed one.
 
+**Platform image patterns.** Photos are also platform-specific. Miva (WS-INC-ORCHIDS-BY-HAUSERMANN-001)
+lazy-loads the product photo via `<img id="js-main-image" data-image="graphics/00000001/<GUID>.jpeg">`
+— the static `src` is a blank.gif placeholder, so a generic `<img src>` extractor captures nothing.
+`extract_miva_images.py` reads each product's own `source_page`, pulls `data-image`, downloads the real
+photo, and pairs it to that product (same page ⇒ correspondence-safe). Diagnose the actual image markup
+(src vs data-src/data-image vs srcset vs background-image vs CDN) before fixing; honest low-res findings
+become a D-2.7.4 photography ask, never invented/upscaled images.
+
 ---
 
 ## 2 · The parity verification loop (CLAUDE.md "Verification loop — binding")
