@@ -252,6 +252,24 @@ persist as the permanent record of what was offered and chosen.)
    beyond E the fix is a conversation, not regeneration (open a decision note instead). Full-build
    from-scratch is unaffected: it auto-accepts **Board B** (the recommendation); wow is a human lever.
 
+## Creativity controls — ONE coherent model (STANDARD · PUSH FURTHER · OVERHAUL)
+Three tiers, no overlaps. ("creative mode" and "the overhaul button" are the SAME thing — one
+capability reached two ways.)
+- **STANDARD** — the default. Clean, purpose-fit; passes the full Design QA Gate + names the brand
+  moment. No flag.
+- **PUSH FURTHER** — incremental. The 🔥 button on the concept-board decision generates ONE bolder
+  board beyond A/B/C (Board D, then E; cap at two), still standard effort. A board generator, not a
+  build mode.
+- **OVERHAUL / CREATIVE** — the maximal swing: full creative-mode craft (graphic-heavy, disciplined
+  richness) + a from-scratch reimagining. ONE capability (`design_mode: creative` in status.json),
+  reachable TWO ways: (a) the **Creative** toggle at build start (Full build), or (b) the **🎨 Overhaul**
+  button on the boards card. Both offer the SAME two input modes: **"Claude develops it"** or
+  **"I provide a starting point"** (`02-intake/overhaul-brief.md`, with the Mode-B guardrail: take
+  inspiration, NEVER copy the reference's trade dress).
+- **Three HARD invariants hold across ALL tiers:** the **parity floor** is untouched (every CARRY-OVER
+  feature stays); every **studio + archetype Hard rule** is untouched; the swing is **EXPRESSION-ONLY**
+  (layout / type / color / motion / graphics) — never facts, features, or guardrails.
+
 ## Command 10 — "Full build (<variant>) for <slug>" (one-click chained rehearsal build)
 The dashboard's **Full build** button triggers this as a headless `claude -p` job. TWO variants
 share ONE chain; the dashboard renders them mutually exclusively by stage and lays down the step

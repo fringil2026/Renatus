@@ -232,6 +232,22 @@ letter) becomes the recorded concept; an experimental choice carries a one-line 
 direction is unconventional; validate with the owner early"). A full-build-from-scratch auto-accepts
 Board B; the wow lever never fires automatically.
 
+### 5.8 The creativity model — ONE hierarchy [HARD]
+Three tiers, no overlaps. "Creative mode" and "the Overhaul button" are the SAME capability reached
+two ways — never two features.
+- **STANDARD** — default; clean, purpose-fit; passes the full Design QA Gate + names the brand moment.
+- **PUSH FURTHER** — incremental: the 🔥 lever generates ONE bolder board beyond A/B/C (D, then E; cap
+  two). A board generator at standard effort, not a build mode.
+- **OVERHAUL / CREATIVE** — the maximal swing: full creative craft (graphic-heavy, disciplined
+  richness) + a from-scratch reimagining. ONE flag `design_mode: creative`, reachable via the
+  **Creative toggle at build start** OR the **🎨 Overhaul button** on the boards card. Both offer the
+  SAME two input modes: **"Claude develops it"** or **"I provide a starting point"**
+  (`02-intake/overhaul-brief.md`; Mode-B guardrail — inspiration, never the reference's trade dress).
+- **Three HARD invariants across all tiers:** the **parity floor** is untouched; **every Hard rule**
+  is untouched; the swing is **EXPRESSION-ONLY** (layout / type / color / motion / graphics), never
+  facts, features, or guardrails. (Implementation: `studio.py` `creative_clause()` feeds both
+  `full_build_runbook` and `overhaul_runbook`; SYSTEM.md §4.)
+
 ---
 
 ## 6. CONTENT & LANGUAGE RULES

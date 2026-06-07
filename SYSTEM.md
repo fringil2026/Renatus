@@ -132,6 +132,19 @@ the screenshots as clickable thumbnails (served via `/api/concept-thumb`), recom
 badges marked. Choosing any letter resolves it as before; full-build-from-scratch auto-accepts Board B —
 wow stays human-in-the-loop.
 
+**The creativity model (ONE hierarchy, no overlaps).** Three tiers; "creative mode" and "overhaul
+button" are the SAME capability reached two ways:
+| Control | When it appears | What it does | Input modes |
+|---|---|---|---|
+| **STANDARD** | always (default) | clean, purpose-fit; full Design QA Gate + brand moment | — |
+| **PUSH FURTHER** (🔥) | on the boards card, after A/B/C exist | generates ONE bolder board (D, then E; cap 2) — a board generator, standard effort | — |
+| **OVERHAUL / CREATIVE** (🎨) | Full-build creative toggle (build start) **AND** the Overhaul button (boards card) | `design_mode: creative` — full creative craft + from-scratch reimagining | "Claude develops it" · "I provide a starting point" (`overhaul-brief.md`, Mode-B trade-dress guardrail) |
+
+Code: ONE flag `design_mode` (status.json) set by BOTH `/api/full-build` (`design_mode` param) and
+`/api/overhaul` (`input_mode`); ONE `creative_clause()` feeds both `full_build_runbook(…, "creative")`
+and `overhaul_runbook()`. **Three HARD invariants across every tier:** parity floor untouched · all
+Hard rules untouched · expression-only (layout/type/color/motion/graphics, never facts/features/guardrails).
+
 ## 5 · Troubleshooting workflow (incidents — diagnose THEN fix)
 When the human reports something broken, the studio does NOT start editing — it materializes an
 **incident** first (`02-intake/incidents/NNN-OPEN-<short>.md`, studio-level → `.claude/incidents/`,
