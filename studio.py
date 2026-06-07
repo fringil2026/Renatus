@@ -386,21 +386,6 @@ def overhaul_runbook(slug, input_mode):
             f"open a decision (resume_job set) and STOP. PUBLISH-ALWAYS at the end; report what changed "
             f"and confirm the three invariants held.")
 
-OVERHAUL_BRIEF_TEMPLATE = """# Overhaul brief — {slug}
-
-A STARTING POINT for the creative overhaul. Claude takes INSPIRATION from this, never imitation —
-your reference's trade dress (logo, exact palette, signature layout, distinctive UI) is never copied.
-
-## Direction / references
-<links, adjectives, a mood, sites you admire — what feeling should it evoke?>
-
-## Must-keep
-<anything specific to preserve. The parity floor + facts are already protected automatically.>
-
-## Avoid
-<what to steer away from>
-"""
-
 def full_build_runbook(slug, variant):
     """The chain instruction handed to `claude -p`. Self-describing + resumable via the progress
     file. Authored to make every recommended decision automatically ONLY for from-scratch.
@@ -973,6 +958,10 @@ button.adv.fb[disabled]{color:var(--muted);border-color:var(--line);opacity:.6}
 .ovbtn:hover:not([disabled]){background:transparent;color:#9b78ff}
 .ovbtn[disabled]{opacity:.5;cursor:not-allowed}
 .cvbadge{font-family:var(--m);font-size:.56rem;letter-spacing:.12em;background:#7a4dff;color:#fff;padding:.15em .5em;border-radius:2px}
+#ov-text{width:100%;box-sizing:border-box;background:#181818;color:#eee;border:1px solid #444;padding:.6em;font-family:var(--b);font-size:.85rem;line-height:1.5;margin-top:.3rem}
+#ov-text:focus{outline:none;border-color:#7a4dff}
+.ovnotice{font-size:.7rem;color:var(--muted);margin:.45rem 0 .2rem;border-left:2px solid #7a4dff;padding-left:.5rem}
+.ovhint{font-size:.72rem;color:#e6a44a;margin:.2rem 0 .5rem}
 .pushnote{font-family:var(--m);font-size:.64rem;color:var(--muted)}
 </style></head><body><div class="wrap">
 <h1>Web Studio</h1><p class="sub">Two human steps · everything else automated</p>
@@ -1019,10 +1008,17 @@ button.adv.fb[disabled]{color:var(--muted);border-color:var(--line);opacity:.6}
     richness + smooth interactivity). It BYPASSES the A/B/C boards (not a 4th board, not built on a
     chosen one). The parity floor, every client fact, and every Hard rule are preserved — the swing is
     EXPRESSION-ONLY. Both ways build from scratch; pick one:</p>
-  <div class="m-btns" style="flex-direction:column;gap:.6rem;align-items:stretch">
+  <div id="ov-modes" class="m-btns" style="flex-direction:column;gap:.6rem;align-items:stretch">
     <button onclick="doOverhaul('claude')">Claude develops it — Claude reaches on its own</button>
-    <button onclick="doOverhaul('brief')">Guide with text — I paste a direction into overhaul-brief.md</button>
+    <button onclick="showBrief()">Guide with text — type/paste a direction</button>
     <button class="ghost" onclick="document.getElementById('ovmodal').style.display='none'">Cancel</button>
+  </div>
+  <div id="ov-brief" style="display:none">
+    <label class="m-lab">Your guiding text — outline, direction, section sketch, reference structure:</label>
+    <textarea id="ov-text" rows="9" oninput="ovValidate()" placeholder="Paste or type your direction… (sections you want, a structure to follow, sites whose FEEL you like)"></textarea>
+    <p class="ovnotice">Direction &amp; inspiration only — never material to clone. Your references' trade dress (logo, exact palette, signature layout, distinctive UI) is never copied (Mode-B guardrail).</p>
+    <p id="ov-hint" class="ovhint">paste your direction or switch to "Claude develops it"</p>
+    <div class="m-btns"><button id="ov-confirm" disabled onclick="confirmBrief()">Build from this →</button><button class="ghost" onclick="backToModes()">Back</button></div>
   </div>
 </div></div>
 <div id="rehexit" class="modal" style="display:none"><div class="modalbox">
@@ -1276,13 +1272,36 @@ async function pushFurther(scope){
   else { alert('Generating an experimental board — watch the row log; the new option joins this card when it lands.'); load(); }
 }
 let OV_SCOPE='';
-function openOverhaul(scope){ OV_SCOPE=scope; document.getElementById('ovmodal').style.display='flex'; }
-async function doOverhaul(input_mode){
+function openOverhaul(scope){ OV_SCOPE=scope;
+  document.getElementById('ov-modes').style.display='flex';
+  document.getElementById('ov-brief').style.display='none';
+  document.getElementById('ov-text').value='';
+  document.getElementById('ovmodal').style.display='flex';
+}
+function backToModes(){ document.getElementById('ov-brief').style.display='none'; document.getElementById('ov-modes').style.display='flex'; }
+function ovValidate(){ const t=document.getElementById('ov-text').value.trim();
+  document.getElementById('ov-confirm').disabled=!t; document.getElementById('ov-hint').style.display=t?'none':'block'; }
+async function showBrief(){
+  document.getElementById('ov-modes').style.display='none';
+  document.getElementById('ov-brief').style.display='block';
+  const ta=document.getElementById('ov-text');
+  try{ const r=await fetch('/api/doc?slug='+encodeURIComponent(OV_SCOPE)+'&name=overhaul-brief.md');
+       if(r.ok) ta.value=(await r.text()).replace(/\\s*<!-- revised[\\s\\S]*$/,'').trimEnd(); }catch(e){}
+  ovValidate(); ta.focus();
+}
+async function doOverhaul(input_mode){   // "Claude develops it" — build immediately, no text
   document.getElementById('ovmodal').style.display='none';
   const r=await api('/api/overhaul',{slug:OV_SCOPE,input_mode});
-  if(r.error){ alert('Overhaul: '+r.error); return; }
-  if(r.await_brief){ alert('Created 02-intake/overhaul-brief.md — paste your direction into it, then click Creative / Wow build → "Guide with text" again to build.'); }
-  else { alert('Creative / Wow build started ('+input_mode+', from scratch — boards bypassed) — watch the row log. Parity floor + facts + Hard rules preserved; the swing is expression-only.'); }
+  if(r.error){ alert('Creative / Wow build: '+r.error); return; }
+  alert('Creative / Wow build started (Claude develops, from scratch — boards bypassed) — watch the row log.');
+  load();
+}
+async function confirmBrief(){   // "Guide with text" — write the brief + build in ONE action
+  const t=document.getElementById('ov-text').value.trim(); if(!t) return;
+  document.getElementById('ovmodal').style.display='none';
+  const r=await api('/api/overhaul',{slug:OV_SCOPE,input_mode:'brief',brief_text:t});
+  if(r.error){ alert('Creative / Wow build: '+r.error); return; }
+  alert('Brief saved to 02-intake/overhaul-brief.md — Creative / Wow build started (guide-with-text, from scratch — boards bypassed). Watch the row log.');
   load();
 }
 function md2html(src){
@@ -1372,7 +1391,7 @@ class H(BaseHTTPRequestHandler):
         elif path == "/api/doc":
             q = parse_qs(urlparse(self.path).query)
             rawslug = q.get("slug", [""])[0]; name = q.get("name", [""])[0]
-            allowed = {"redesign-plan.md", "deliverables-request.md", "production-roadmap.md", "backend-config.yaml"}
+            allowed = {"redesign-plan.md", "deliverables-request.md", "production-roadmap.md", "backend-config.yaml", "overhaul-brief.md"}
             is_report = name.startswith("reports/") and name.endswith(".md") and ".." not in name
             if rawslug in ("__studio__", "studio"):   # studio-level reports
                 f = ROOT / ".claude" / "reports" / Path(name).name
@@ -1481,13 +1500,14 @@ class H(BaseHTTPRequestHandler):
             if not cdir.exists():
                 return self._send(json.dumps({"error": "no such client"}), "application/json", 404)
             input_mode = "brief" if d.get("input_mode") == "brief" else "claude"
+            if input_mode == "brief":   # text comes from the dashboard textarea, written here as the record
+                brief_text = (d.get("brief_text") or "").strip()
+                if not brief_text:
+                    return self._send(json.dumps({"error": "paste your direction or choose 'Claude develops it'"}), "application/json", 400)
+                bf = cdir / "02-intake" / "overhaul-brief.md"
+                note = f"\n\n<!-- revised {now()[:10]} via dashboard -->\n" if bf.exists() else "\n"
+                bf.write_text(brief_text + note)
             set_design_mode(cdir, "creative", input_mode)
-            brief = cdir / "02-intake" / "overhaul-brief.md"
-            if input_mode == "brief" and not brief.exists():   # arm: create the brief, await the human
-                brief.write_text(OVERHAUL_BRIEF_TEMPLATE.format(slug=slug))
-                bump(cdir, msg="CREATIVE/WOW armed (guide-with-text) — awaiting 02-intake/overhaul-brief.md")
-                return self._send(json.dumps({"ok": True, "await_brief": True, "created": True,
-                                              "msg": "Fill 02-intake/overhaul-brief.md, then run Creative / Wow build again to build."}), "application/json")
             with TASK_LOCK:
                 if slug in TASKS:
                     return self._send(json.dumps({"error": "a Claude task is already running for this client"}), "application/json", 409)
