@@ -20,8 +20,11 @@ arms race against active blocking.
 | 4 | Wayback archive (`archive_fetch.py`) | last-resort evidence when blocked | only when live rungs are blocked |
 | 5 | human | decision card w/ a ready-to-send owner-export note | only when all rungs are insufficient |
 
-**Block detection (rung 1):** HTTP 5xx/403 on the homepage OR the Cloudflare challenge marker
-`/cdn-cgi/challenge-platform/` in any response → BLOCKED → escalate.
+**Block detection (rung 1):** a REAL block = HTTP 4xx/5xx on the homepage, OR the Cloudflare
+challenge marker `/cdn-cgi/challenge-platform/` WITH little real content (a true interstitial). The
+challenge script ships inside ordinary 200 pages, so its presence ALONE is NOT a block
+(WS-INC-SEATTLE-ORCHIDS-001 — it once discarded a 150-page live crawl for stale archive). Render-rung
+success counts captured screenshots (`*-desktop.png` / `render.json`), not `.html` files.
 
 **Missing tools never silently skip.** `wget` and Playwright availability are checked; if absent the
 rung is logged LOUDLY (`‼ RUNG n FAILED`) and counts as a rung failure with the install command.

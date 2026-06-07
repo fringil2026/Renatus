@@ -55,28 +55,46 @@ def playwright_ready():
         return False
 
 def crawl_assessment(client):
-    """Return (pages_with_text, blocked, reason)."""
+    """Return (pages_with_text, blocked, reason). The Cloudflare challenge SCRIPT
+    (/cdn-cgi/challenge-platform/) ships inside NORMAL 200 pages, so its presence ALONE is NOT a
+    block (incident WS-INC-SEATTLE-ORCHIDS-001). Treat as blocked only on an actual failure —
+    homepage 4xx/5xx — OR a challenge marker WITH little real content (a true interstitial)."""
     f = client / "00-source" / "crawl.json"
     if not f.exists():
         return 0, True, "crawl.json missing"
     raw = f.read_text(errors="ignore")
-    blocked = CHALLENGE in raw
     try:
         data = json.loads(raw)
     except Exception:
         return 0, True, "crawl.json unparseable"
     pages = data.get("pages", [])
     pwt = sum(1 for p in pages if len((p.get("text") or "")) > 200)
-    # homepage status (best-effort) from extras
-    for k, v in (data.get("extras", {}) or {}).items():
-        if k in ("/", "") and isinstance(v, dict) and v.get("status") in (403, 500, 502, 503, 429):
-            blocked = True
-    reason = "Cloudflare challenge marker" if CHALLENGE in raw else ("low page yield" if pwt < 3 else "")
+    bad_status = any(isinstance(v, dict) and v.get("status") in (403, 500, 502, 503, 429)
+                     for k, v in (data.get("extras", {}) or {}).items() if k in ("/", ""))
+    challenge_wall = (CHALLENGE in raw) and pwt < 3   # marker AND no real content = real interstitial
+    blocked = bad_status or challenge_wall
+    reason = ("homepage 4xx/5xx" if bad_status else
+              "challenge interstitial (no content)" if challenge_wall else
+              "low page yield" if pwt < 3 else "")
     return pwt, blocked, reason
 
 def rendered_count(client):
+    """render_capture writes one <page>-desktop.png per captured page (+ render.json), NOT HTML
+    (incident WS-INC-SEATTLE-ORCHIDS-001 — counting *.html always returned 0)."""
     d = client / "00-source" / "rendered"
-    return len(list(d.rglob("*.html"))) if d.exists() else 0
+    if not d.exists():
+        return 0
+    n = len(list(d.glob("*-desktop.png")))
+    if n:
+        return n
+    rj = d / "render.json"
+    if rj.exists():
+        try:
+            data = json.loads(rj.read_text())
+            return len(data) if isinstance(data, list) else len(data.get("pages", []))
+        except Exception:
+            return 0
+    return len(list(d.rglob("*.png")))
 
 def write_decision_owner_export(client, domain):
     dd = client / "02-intake" / "decisions"
