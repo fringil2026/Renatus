@@ -370,6 +370,23 @@ the OPEN incident (the words become the SYMPTOM) and enqueues the headless diagn
 show as a count badge with the decisions card treatment. The chat tier routes problem reports through
 this convention instead of ad-hoc fixing.
 
+## Findings & reports — binding (a finding only in scrollback doesn't exist)
+Any substantive finding or report — build/assemble reports, feature-census summaries, verification-loop
+checklist results, Design QA audits, incident diagnostics + resolutions, correspondence-audit results,
+backend phase reports, scrape coverage summaries — is WRITTEN, at the moment it is produced, as a
+markdown file: `clients/<slug>/02-intake/reports/<YYYY-MM-DD-HHMM>-<kind>.md` (studio-level findings →
+`.claude/reports/`). Terminal/chat output stays the conversational copy; the FILE is the record.
+- Reports are **append-only history** — never edited after the fact; a correction is a NEW report that
+  references the old one.
+- Artifacts that ARE already the record (edit `## Resolution` blocks, incident files, the parity
+  checklist, coverage.md) are **LINKED from a report, never duplicated**.
+- Every finding-producing flow ends with this write: the **advance jobs, full-build chains, the
+  incident workflow, the verification loop, and the intake pack** all finish by emitting their report
+  file (the conventions they already follow now end with the file write — nothing to remember).
+Dashboard: the row's Documents panel gains a **Reports** section (newest first; kind + timestamp +
+one-line summary = the file's first heading/summary line; click renders the markdown; a "new" dot when
+reports appeared since you last opened that client's panel). Studio-level reports show in the header.
+
 ## Auto-approval audit
 At the END of every task, read the `.claude/audit/session.log` entries written since the
 task began and emit a mini report: the total count of auto-approved actions, grouped (file

@@ -136,7 +136,20 @@ submitting writes the OPEN incident with the words as SYMPTOM and enqueues the h
 (`claude -p "Diagnose incident …"`). Open incidents render as a count badge with the decisions card
 treatment. The chat tier recognizes problem reports and routes them through this convention.
 
+## 6 · Findings & reports (every report becomes a visible artifact)
+A finding that exists only in scrollback doesn't exist. Every substantive report — assemble/build,
+feature census, verification-loop checklist, Design QA audit, incident diagnostic/resolution,
+correspondence audit, backend phase, scrape coverage — is written WHEN PRODUCED to
+`02-intake/reports/<YYYY-MM-DD-HHMM>-<kind>.md` (studio → `.claude/reports/`). Append-only; corrections
+are new reports referencing the old. Records that already exist as their own artifacts (edit
+Resolutions, incident files, parity-checklist, coverage.md) are LINKED, never duplicated. Every
+finding-emitting flow (advance jobs, full-build, incidents, verification loop, intake pack) ends with
+the file write. **Dashboard:** the row Documents panel has a Reports section (newest first; kind +
+timestamp + one-line summary; click to render; "new" dot since last opened) — `studio.py`
+`list_reports()` / `/api/doc` serves `reports/`; studio reports surface in the header.
+
 ## Related systems (pointers)
+- **Findings & reports** — §6 above; CLAUDE.md "Findings & reports".
 - **Troubleshooting / incidents** — §5 above; CLAUDE.md "Troubleshooting workflow"; `incident-template.md`.
 - **Decision surfaces / inbox** — judgment moments become dashboard cards (CLAUDE.md "Decision surfaces").
 - **Action surface + full build** — §3 above; CLAUDE.md Command 10 (`studio.py`).

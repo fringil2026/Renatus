@@ -712,6 +712,31 @@ def create_incident(scope, symptom):
                 threading.Thread(target=run_advance, args=(scope, cmd, "incident diagnostic", None), daemon=True).start()
     return True, f.name
 
+# ---------------- reports (every finding becomes a visible artifact) ----------------
+def reports_dir(scope):
+    return (ROOT / ".claude" / "reports") if scope == STUDIO_KEY else (CLIENTS / scope / "02-intake" / "reports")
+
+def _report_summary(path):
+    try:
+        for l in path.read_text(errors="ignore").splitlines():
+            s = l.strip()
+            if s and not s.startswith("---"):
+                return s.lstrip("# ").strip()[:120]
+    except Exception:
+        pass
+    return ""
+
+def list_reports(scope):
+    dd = reports_dir(scope)
+    if not dd.exists():
+        return []
+    out = []
+    for f in sorted(dd.glob("*.md"), reverse=True):  # newest first (timestamp-prefixed names sort)
+        m = re.match(r'(\d{4}-\d{2}-\d{2}-\d{4})-(.+)\.md$', f.name)
+        out.append({"file": f.name, "ts": (m.group(1) if m else ""),
+                    "kind": (m.group(2).replace("-", " ") if m else f.stem), "summary": _report_summary(f)})
+    return out
+
 def list_clients():
     out = []
     if not CLIENTS.exists(): return out
@@ -741,6 +766,7 @@ def list_clients():
                     "busy": d.name in TASKS,
                     "decisions_open": open_decision_count(d.name),
                     "incidents_open": open_incident_count(d.name),
+                    "reports": list_reports(d.name),
                     "documents": [n for n in ("redesign-plan.md", "deliverables-request.md",
                                               "production-roadmap.md", "backend-config.yaml")
                                   if (d / "02-intake" / n).exists()],
@@ -805,6 +831,7 @@ button.adv[disabled]{color:var(--muted);border-color:var(--line);cursor:not-allo
 .rehbadge{font-family:var(--m);font-size:.56rem;letter-spacing:.12em;background:#7a4dff;color:#fff;padding:.15em .5em;border-radius:2px}
 .needbadge{font-family:var(--m);font-size:.58rem;letter-spacing:.1em;background:#c0392b;color:#fff;padding:.18em .55em;border-radius:2px}
 .incbadge{font-family:var(--m);font-size:.58rem;letter-spacing:.1em;background:#b8740a;color:#fff;padding:.18em .55em;border-radius:2px}
+.ndot{color:#c0392b;font-size:.7rem;vertical-align:middle}
 .needstrip{border:1px solid #c0392b;background:#1a0f0f;margin:0 0 1.4rem;padding:1rem 1.1rem}
 .needstrip.incstrip{border-color:#b8740a;background:#181206}
 .incstrip .needhead{color:#e6a44a}
@@ -893,6 +920,7 @@ button.adv.fb[disabled]{color:var(--muted);border-color:var(--line);opacity:.6}
   <input type="text" placeholder="Report a studio problem — dashboard/pipeline/script (becomes a .claude/incidents/ incident)" required>
   <button class="ghost">Report ⚑</button>
 </form>
+<div id="studioreports" class="docs"></div>
 <p class="stats" id="stats"></p>
 <div class="card"><h2>Step 1 — New client</h2>
 <form class="new" onsubmit="return newClient(event)">
@@ -1064,6 +1092,8 @@ async function load(){
   document.getElementById('stats').textContent =
     `active scrapes ${d.running}/${d.max} · queued ${d.queued} · archived projects ${d.archived}`;
   renderNeeds(d.decisions||[], d.incidents||[]);
+  const sr=document.getElementById('studioreports');
+  if(sr) sr.innerHTML=(d.studio_reports&&d.studio_reports.length)?`<span class="mono-label">studio reports${newDot('__studio__',d.studio_reports)}</span> `+d.studio_reports.slice(0,8).map(r=>`<button class="docbtn" onclick="openReport('__studio__','${r.file}','${d.studio_reports[0].file}')" title="${esc(r.summary)}">${esc(r.kind)} · ${r.ts}</button>`).join(' '):'';
   const el = document.getElementById('list');
   if(!d.clients.length){ el.innerHTML='<p class="empty">No active clients — start one above.</p>'; return; }
   el.innerHTML = d.clients.map(c=>`<div class="row${c.done?' fin':''}">
@@ -1088,6 +1118,7 @@ async function load(){
     ${c.preview_url?`<div class="prev"><a class="pvw" href="${c.preview_url}" target="_blank" rel="noopener">Preview ↗</a> <span class="copy" title="Copy URL" onclick="cp('${c.preview_url}')">⧉</span> <span class="pdate">${c.preview_rel||c.preview_at}</span>${c.preview_stale?' <span class="stale">⚠ last deploy failed</span>':(c.preview_behind?' <span class="stale">⚠ preview behind latest edits</span>':'')}</div>`:''}
     ${c.documents&&c.documents.length?`<div class="docs"><span class="mono-label">documents</span> ${c.documents.map(n=>`<button class="docbtn" onclick="openDoc('${c.slug}','${n}')">${n}</button>`).join(' ')}</div>`:''}
     ${c.concepts&&c.concepts.length?`<div class="docs"><span class="mono-label">concept boards</span> ${c.concepts.map(b=>`<a class="docbtn" href="${b.url||'#'}" target="_blank" rel="noopener" title="${esc(b.one_liner)}">${b.recommended?'★ ':''}${esc(b.name)} ↗</a><a class="docbtn" href="/api/concept-thumb?slug=${c.slug}&name=${esc(b.thumb_desktop)}" target="_blank" rel="noopener" title="desktop screenshot">🖼 png</a>`).join(' ')}</div>`:''}
+    ${c.reports&&c.reports.length?`<div class="docs"><span class="mono-label">reports${newDot(c.slug,c.reports)}</span> ${c.reports.slice(0,8).map(r=>`<button class="docbtn" onclick="openReport('${c.slug}','${r.file}','${c.reports[0].file}')" title="${esc(r.summary)}">${esc(r.kind)} · ${r.ts}</button>`).join(' ')}</div>`:''}
     <form class="report" onsubmit="return reportProblem(event,'${c.slug}')">
       <input type="text" placeholder="Report a problem — what's broken? (becomes an incident, then a diagnostic)" required>
       <button class="ghost">Report ⚑</button>
@@ -1164,6 +1195,8 @@ async function reportProblem(e, scope){
   else { inp.value=''; alert('Incident '+r.incident+' filed — diagnostic running. It will diagnose before any fix.'); load(); }
   return false;
 }
+function newDot(slug, reports){ try{ return (reports.length && localStorage.getItem('rseen_'+slug)!==reports[0].file) ? ' <span class="ndot" title="new reports since you last looked">●</span>' : ''; }catch(e){ return ''; } }
+function openReport(slug, file, newest){ try{ localStorage.setItem('rseen_'+slug, newest); }catch(e){} openDoc(slug, 'reports/'+file); }
 async function pushFurther(scope){
   const r=await api('/api/push-further',{slug:scope});
   if(r.error){ alert('Push further: '+r.error); }
@@ -1239,7 +1272,8 @@ class H(BaseHTTPRequestHandler):
                                    "max": MAX_SCRAPES, "queued": queued,
                                    "archived": archived, "server": IS_SERVER,
                                    "ttyd_url": TTYD_URL, "decisions": list_open_decisions(),
-                                   "incidents": list_open_incidents()}), "application/json")
+                                   "incidents": list_open_incidents(),
+                                   "studio_reports": list_reports(STUDIO_KEY)}), "application/json")
         elif path == "/api/chat":
             q = parse_qs(urlparse(self.path).query)
             slug = q.get("slug", [""])[0]
@@ -1254,10 +1288,17 @@ class H(BaseHTTPRequestHandler):
             self._send(json.dumps({"decisions": list_open_decisions()}), "application/json")
         elif path == "/api/doc":
             q = parse_qs(urlparse(self.path).query)
-            slug = slugify(q.get("slug", [""])[0]); name = q.get("name", [""])[0]
+            rawslug = q.get("slug", [""])[0]; name = q.get("name", [""])[0]
             allowed = {"redesign-plan.md", "deliverables-request.md", "production-roadmap.md", "backend-config.yaml"}
+            is_report = name.startswith("reports/") and name.endswith(".md") and ".." not in name
+            if rawslug in ("__studio__", "studio"):   # studio-level reports
+                f = ROOT / ".claude" / "reports" / Path(name).name
+                if not (is_report and f.exists()):
+                    return self._send("not found", code=404)
+                return self._send(f.read_text(), "text/plain")
+            slug = slugify(rawslug)
             f = CLIENTS / slug / "02-intake" / name
-            if name not in allowed or not f.exists():
+            if not ((name in allowed or is_report) and f.exists()):
                 return self._send("not found", code=404)
             self._send(f.read_text(), "text/plain")
         elif path == "/api/concept-thumb":
