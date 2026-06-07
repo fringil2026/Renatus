@@ -573,6 +573,19 @@ dashboard cards → immutable RESOLVED. Conversational requests are materialized
 BEFORE implementation. Every judgment capability ships with a dashboard control in the same
 commit (decision-surfaces rule).
 
+**Incidents (diagnose THEN fix) — binding.** A reported problem ("X is broken", "doesn't load",
+"button does nothing") is NEVER fixed ad-hoc. It is materialized FIRST as
+`02-intake/incidents/NNN-OPEN-<short>.md` (studio → `.claude/incidents/`) from
+`templates/incident-template.md`: SYMPTOM (verbatim) → DIAGNOSTIC (reproduce FIRST, evidence) →
+ROOT CAUSE (one falsifiable sentence) → FIX PLAN (smallest change; reimplementation allowed when the
+implementation is unsound) → VERIFICATION (reproduction must pass + the parity-checklist rows the fix
+could disturb) → RESOLUTION. Client-site fixes route THROUGH the edit convention (incident links its
+edit NNN; publish-always applies); studio fixes commit with the SYSTEM.md update. One root cause per
+incident; OPEN→RESOLVED only after verification; RESOLVED is immutable; a recurring symptom reopens as
+a NEW incident that must first explain why the prior fix didn't hold. Dashboard: "Report a problem"
+box per row + studio header → creates the incident + enqueues the diagnostic; open incidents show a
+count badge. (Full spec: CLAUDE.md "Troubleshooting workflow"; SYSTEM.md §5.)
+
 ## 22. GLOSSARY
 
 **Archetype** — the reusable master site in `templates/`; never edited for a client.

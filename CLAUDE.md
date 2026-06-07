@@ -318,6 +318,38 @@ reason / what-happens-next per option. The dashboard renders OPEN decisions in a
 strip; resolving one records the choice + timestamp, renames OPEN→RESOLVED (immutable history),
 logs to status.json, and resumes any job the decision was blocking.
 
+## Troubleshooting workflow — binding (diagnose THEN fix)
+When the human reports something not working — ANY phrasing ("X is broken", "this doesn't load",
+"the button does nothing") — do NOT start changing files. First MATERIALIZE an incident:
+`clients/<slug>/02-intake/incidents/NNN-OPEN-<short-name>.md` (studio-level problems →
+`.claude/incidents/`), from `templates/incident-template.md`. The filename IS the state
+(OPEN / BLOCKED / RESOLVED). The six sections are binding:
+- **SYMPTOM** — the human's words VERBATIM + where observed (URL, screen, command).
+- **DIAGNOSTIC** — evidence gathered BEFORE any fix; reproduce the failure FIRST (build output,
+  status.json log, audit log, browser-visible behavior, the failing request/route); state what was
+  checked and what each check showed. No reproduction ⇒ say so honestly + what's needed to reproduce.
+- **ROOT CAUSE** — ONE falsifiable sentence naming the actual cause, traced to evidence. "Probably X"
+  is not a root cause — keep diagnosing, or state competing hypotheses + how the fix discriminates.
+- **FIX PLAN** — smallest change addressing the root cause; every file to touch + why. Reimplementation
+  is allowed when the diagnostic shows the implementation itself is unsound — say so, don't patch rot.
+- **VERIFICATION** — re-run the reproduction (must now pass) + re-run every parity-checklist row the
+  touched files could disturb (the verification-loop rule applies).
+- **RESOLUTION** — filled at close: what changed, commit(s), evidence the symptom is gone.
+
+Execution rules:
+1. **Client-site** fixes implement THROUGH the edit convention (the incident links its edit NNN);
+   **studio-system** fixes commit directly with the SYSTEM.md update. Publish-always applies to site fixes.
+2. **One root cause per incident.** A diagnostic that uncovers a second independent problem opens a
+   SECOND incident rather than scope-creeping.
+3. If the fix needs a missing client fact/credential: incident → `NNN-BLOCKED-…` naming it + a decision card.
+4. Rename OPEN→RESOLVED ONLY after verification passes; RESOLVED incidents are immutable history.
+5. **RECURRENCE:** a symptom matching a RESOLVED incident reopens as a NEW incident referencing the old
+   one — and the diagnostic must explain why the previous fix didn't hold before any new fix lands.
+Dashboard: every client row + the studio header carry a "Report a problem" box; submitting it creates
+the OPEN incident (the words become the SYMPTOM) and enqueues the headless diagnostic. Open incidents
+show as a count badge with the decisions card treatment. The chat tier routes problem reports through
+this convention instead of ad-hoc fixing.
+
 ## Auto-approval audit
 At the END of every task, read the `.claude/audit/session.log` entries written since the
 task began and emit a mini report: the total count of auto-approved actions, grouped (file

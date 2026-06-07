@@ -98,7 +98,29 @@ persist). The concept decision YAML carries `board_url` + `thumb` per option, so
 Assemble. A full-build-from-scratch generates + records the boards but auto-accepts the recommended
 concept without waiting.
 
+## 5 · Troubleshooting workflow (incidents — diagnose THEN fix)
+When the human reports something broken, the studio does NOT start editing — it materializes an
+**incident** first (`02-intake/incidents/NNN-OPEN-<short>.md`, studio-level → `.claude/incidents/`,
+from `templates/incident-template.md`). Filename-is-state (OPEN/BLOCKED/RESOLVED), mirroring edits +
+decisions. Six binding sections: SYMPTOM (verbatim) → DIAGNOSTIC (reproduce FIRST, evidence) → ROOT
+CAUSE (one falsifiable sentence) → FIX PLAN (smallest change; reimplementation allowed if the impl is
+unsound) → VERIFICATION (reproduction must pass + the parity-checklist rows the fix could disturb) →
+RESOLUTION (filled at close).
+
+Rules: client-site fixes go THROUGH the edit convention (incident links its edit NNN; publish-always
+applies); studio-system fixes commit directly with the SYSTEM.md update. One root cause per incident
+(a second problem → a second incident, no scope creep). Missing fact/credential → `NNN-BLOCKED-…` +
+decision card. OPEN→RESOLVED only after verification passes; RESOLVED is immutable. RECURRENCE: a
+symptom matching a RESOLVED incident reopens as a NEW incident referencing the old, and the diagnostic
+must explain why the previous fix didn't hold before any new fix lands.
+
+**Dashboard:** every client row + the studio header carry a "Report a problem" box (`/api/incident`);
+submitting writes the OPEN incident with the words as SYMPTOM and enqueues the headless diagnostic
+(`claude -p "Diagnose incident …"`). Open incidents render as a count badge with the decisions card
+treatment. The chat tier recognizes problem reports and routes them through this convention.
+
 ## Related systems (pointers)
+- **Troubleshooting / incidents** — §5 above; CLAUDE.md "Troubleshooting workflow"; `incident-template.md`.
 - **Decision surfaces / inbox** — judgment moments become dashboard cards (CLAUDE.md "Decision surfaces").
 - **Action surface + full build** — §3 above; CLAUDE.md Command 10 (`studio.py`).
 - **Concept boards** — §4 above; CLAUDE.md Command 9 (`concept_boards.py`).
