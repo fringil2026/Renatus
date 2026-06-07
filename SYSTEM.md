@@ -40,6 +40,15 @@ archive HTML into its evidence and labels its source; tokens-draft does the same
 **Reporting.** `01-baseline/coverage.md` records every rung attempted, its result, and which rungs the
 final baseline rests on.
 
+**Platform catalog enumeration.** Some platforms hide the catalog from category-link following.
+Volusion (WS-INC-SEATTLE-ORCHIDS-002) exposes all products only in `/sitemap.xml` as
+`/<Name>-p/<alphanumeric-sku>.htm` — the generic crawler caps out on category `-s/` pages and captures
+zero products. When the evidence fingerprints Volusion, the ladder runs `scrape_volusion.py`
+(sitemap → product URLs → polite static-HTML parse: `og:title`, `og:image`, "Our Price $X" as DRAFT)
+→ `01-baseline/catalog-draft.json`. This is URL-DISCOVERY + platform-parse, never an unblocking trick
+(no proxy/CAPTCHA/token evasion — that boundary stays). Build a platform extractor to the diagnosed
+cause, not a guessed one.
+
 ---
 
 ## 2 · The parity verification loop (CLAUDE.md "Verification loop — binding")

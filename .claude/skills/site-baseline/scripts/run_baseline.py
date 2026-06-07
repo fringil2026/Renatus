@@ -228,6 +228,17 @@ def main():
         (client / "00-source").mkdir(parents=True, exist_ok=True)
         (client / "00-source" / "evidence-source.txt").write_text(evidence_source + "\n")
 
+        # ---- Platform catalog enumeration (Volusion exposes the catalog only via /sitemap.xml,
+        #      not via category-link following — WS-INC-SEATTLE-ORCHIDS-002) ----
+        cj = client / "00-source" / "crawl.json"
+        platform = ""
+        if cj.exists():
+            low = cj.read_text(errors="ignore").lower()
+            if "volusion" in low or "/v/vspfiles/" in low:
+                platform = "volusion"
+        if platform == "volusion" and live_sufficient:
+            run([py, str(HERE / "scrape_volusion.py"), str(client)], client, "volusion catalog (sitemap enum)")
+
         # ---- Extracts (feed on whatever rungs captured) ----
         run([py, str(HERE / "extract.py"), str(client)], client, "extract baseline")
         run([py, str(HERE / "feature_census.py"), str(client)], client, "feature census")
