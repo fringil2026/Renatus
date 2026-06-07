@@ -18,3 +18,4 @@ __pycache__/
 *.env
 **/secrets/
 MASTERFILE*.md
+.claude/incidents/

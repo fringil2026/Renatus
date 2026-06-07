@@ -889,6 +889,10 @@ button.adv.fb[disabled]{color:var(--muted);border-color:var(--line);opacity:.6}
 .pushnote{font-family:var(--m);font-size:.64rem;color:var(--muted)}
 </style></head><body><div class="wrap">
 <h1>Web Studio</h1><p class="sub">Two human steps · everything else automated</p>
+<form class="shreport" onsubmit="return reportProblem(event,'__studio__')" title="Studio-level problem (dashboard, pipeline, a script)">
+  <input type="text" placeholder="Report a studio problem — dashboard/pipeline/script (becomes a .claude/incidents/ incident)" required>
+  <button class="ghost">Report ⚑</button>
+</form>
 <p class="stats" id="stats"></p>
 <div class="card"><h2>Step 1 — New client</h2>
 <form class="new" onsubmit="return newClient(event)">
