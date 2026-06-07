@@ -348,9 +348,11 @@ def init_full_build(cdir, variant):
     fb_progress_path(cdir).write_text(json.dumps(prog, indent=2))
     return prog
 
-# ---------------- creativity model: STANDARD / PUSH FURTHER / OVERHAUL(=creative) ----------------
-# ONE flag (design_mode), TWO entry points (build-start + the boards Overhaul button), TWO input
-# modes (claude / brief). "creative mode" and "the overhaul button" are the SAME capability.
+# ---------------- creativity model: STANDARD / PUSH FURTHER / CREATIVE-WOW ----------------
+# ONE flag (design_mode=creative), ONE entry point: the "Creative / Wow build" button on the boards
+# decision card -> /api/overhaul. TWO input modes (claude / brief). It bypasses the A/B/C boards and
+# builds from scratch. Standard builds use Advance / Full build (standard BY DESIGN — they ignore
+# design_mode). creative_clause is ALWAYS injected on the creative path — never a silent downgrade.
 def set_design_mode(cdir, mode, input_mode=""):
     st = read_status(cdir); st["design_mode"] = mode
     if input_mode:
@@ -399,11 +401,11 @@ your reference's trade dress (logo, exact palette, signature layout, distinctive
 <what to steer away from>
 """
 
-def full_build_runbook(slug, variant, design_mode="standard"):
+def full_build_runbook(slug, variant):
     """The chain instruction handed to `claude -p`. Self-describing + resumable via the progress
-    file. Authored to make every recommended decision automatically ONLY for from-scratch."""
-    creative = (" " + creative_clause(read_status(CLIENTS / slug).get("overhaul_input", "claude"))
-                if design_mode == "creative" else "")
+    file. Authored to make every recommended decision automatically ONLY for from-scratch.
+    Full build is ALWAYS standard; the creative/wow path is the separate Creative build
+    (the boards-step button -> /api/overhaul -> overhaul_runbook)."""
     auto = ("This is FROM-SCRATCH: make every recommended decision automatically — if the "
             "'Choose the design concept' decision is still OPEN, resolve it to the RECOMMENDED "
             "option (Board B, the 'confident' board; record that the full build auto-accepted it) "
@@ -425,8 +427,7 @@ def full_build_runbook(slug, variant, design_mode="standard"):
         f"surface; cutover stays refused while any # REHEARSAL credential is in use. On ANY fork that "
         f"needs the human's judgment, do NOT guess — open a decision (02-intake/decisions/NNN-OPEN-*.yaml) "
         f"with resume_job set so resolving it resumes this build, leave the step 'active', and STOP. "
-        f"Each completed step still obeys PUBLISH-ALWAYS. When all steps are done, report what was built."
-        + creative)
+        f"Each completed step still obeys PUBLISH-ALWAYS. When all steps are done, report what was built.")
 
 def full_build_action(slug, st):
     """Stage-gated full-build button (mutually exclusive variants). Returns
@@ -1006,7 +1007,6 @@ button.adv.fb[disabled]{color:var(--muted);border-color:var(--line);opacity:.6}
   <div id="m-unmet" class="m-unmet"></div>
   <label class="m-lab">Type the client slug to confirm: <b id="m-slug"></b></label>
   <input id="m-input" placeholder="slug" autocomplete="off">
-  <label id="m-creative" class="m-lab" style="display:none"><input type="checkbox" id="m-creative-cb"> 🎨 Creative overhaul — the maximal swing (graphic-heavy reimagining; parity + facts + Hard rules preserved)</label>
   <div class="m-btns"><button id="m-run">Run</button><button class="ghost" onclick="closeModal()">Cancel</button></div>
 </div></div>
 <div id="docmodal" class="modal" style="display:none"><div class="modalbox docbox">
@@ -1014,13 +1014,14 @@ button.adv.fb[disabled]{color:var(--muted);border-color:var(--line);opacity:.6}
   <div id="doc-body" class="docmd"></div>
 </div></div>
 <div id="ovmodal" class="modal" style="display:none"><div class="modalbox">
-  <h3>🎨 Overhaul — the creative maximal swing</h3>
-  <p class="m-desc">Full creative-mode craft + a from-scratch reimagining (graphic-heavy, disciplined
-    richness). The parity floor, every client fact, and every Hard rule are preserved — the swing is
-    EXPRESSION-ONLY. This is the SAME capability as choosing Creative at build start. Pick how to start:</p>
+  <h3>🎨 Creative / Wow build — the maximal swing</h3>
+  <p class="m-desc">A from-scratch maximal reimagining — full creative craft (disciplined graphic
+    richness + smooth interactivity). It BYPASSES the A/B/C boards (not a 4th board, not built on a
+    chosen one). The parity floor, every client fact, and every Hard rule are preserved — the swing is
+    EXPRESSION-ONLY. Both ways build from scratch; pick one:</p>
   <div class="m-btns" style="flex-direction:column;gap:.6rem;align-items:stretch">
-    <button onclick="doOverhaul('claude')">Claude develops it</button>
-    <button onclick="doOverhaul('brief')">I provide a starting point (overhaul-brief.md)</button>
+    <button onclick="doOverhaul('claude')">Claude develops it — Claude reaches on its own</button>
+    <button onclick="doOverhaul('brief')">Guide with text — I paste a direction into overhaul-brief.md</button>
     <button class="ghost" onclick="document.getElementById('ovmodal').style.display='none'">Cancel</button>
   </div>
 </div></div>
@@ -1109,7 +1110,6 @@ function enterReh(slug){
   document.getElementById('m-title').textContent='Enter rehearsal mode';
   document.getElementById('m-desc').textContent="Phases 2–4 build against studio TEST resources (test Supabase/Stripe/Resend) and every surface shows a TEST MODE banner. Cutover stays blocked until you swap to the client's real accounts.";
   document.getElementById('m-cmd').textContent=''; document.getElementById('m-unmet').textContent='';
-  document.getElementById('m-creative').style.display='none';
   document.getElementById('m-slug').textContent=slug;
   const inp=document.getElementById('m-input'); inp.value='';
   document.getElementById('m-run').onclick=async()=>{ const r=await api('/api/rehearsal',{slug,action:'enter',confirm:inp.value.trim()}); if(r.error) alert(r.error); else { closeModal(); load(); } };
@@ -1134,7 +1134,6 @@ function openAdvance(slug){
   document.getElementById('m-desc').textContent=c.advance.desc||'';
   document.getElementById('m-cmd').textContent='claude -p "'+c.advance.command+'"';
   document.getElementById('m-unmet').textContent=c.advance.tooltip||'';
-  document.getElementById('m-creative').style.display='none';
   document.getElementById('m-slug').textContent=slug;
   const inp=document.getElementById('m-input'); inp.value='';
   document.getElementById('m-run').onclick=async()=>{
@@ -1153,10 +1152,8 @@ function openFullBuild(slug){
   document.getElementById('m-unmet').textContent = c.full_build.resumable ? 'Resumes from the last completed step (see the row).' : '';
   document.getElementById('m-slug').textContent=slug;
   const inp=document.getElementById('m-input'); inp.value='';
-  const mc=document.getElementById('m-creative'), cb=document.getElementById('m-creative-cb');
-  mc.style.display='block'; cb.checked = (c.design_mode==='creative');
   document.getElementById('m-run').onclick=async()=>{
-    const r=await api('/api/full-build',{slug,confirm:inp.value.trim(),design_mode:cb.checked?'creative':'standard'});
+    const r=await api('/api/full-build',{slug,confirm:inp.value.trim()});
     if(r.error){ alert('Cannot start: '+r.error); } else { closeModal(); load(); }
   };
   document.getElementById('modal').style.display='flex'; inp.focus();
@@ -1237,7 +1234,7 @@ function renderNeeds(decs, incs){
           dn.can_escalate
             ? `<button class="pushbtn" ${dn.busy?'disabled':''} onclick="pushFurther('${dn.scope}')" title="Generate an experimental Board ${'ABCDE'[dn.board_count]||'D'} beyond the bold board — generative, no confirm">🔥 Push further</button><span class="pushnote">not landing? generate an experimental board (${dn.board_count}/5)</span>`
             : `<span class="pushnote">Two escalations reached (Board E exists) — the fix is a conversation now, not another board.</span>`
-        }<button class="ovbtn" ${dn.busy?'disabled':''} onclick="openOverhaul('${dn.scope}')" title="The maximal swing: full creative-mode craft + a from-scratch reimagining. Same as choosing Creative at build start.">🎨 Overhaul (creative)</button>${dn.busy?'<span class="run">● generating…</span>':''}</div>` : '';
+        }<button class="ovbtn" ${dn.busy?'disabled':''} onclick="openOverhaul('${dn.scope}')" title="From-scratch maximal reimagining — bypasses the A/B/C boards entirely. Full creative craft (graphic richness + smooth interactivity); parity + facts + Hard rules preserved.">🎨 Creative / Wow build</button>${dn.busy?'<span class="run">● generating…</span>':''}</div>` : '';
       const opts = isBoards
         ? `<div class="decboards">${dn.options.map(o=>`
             <div class="bcard ${o.id===dn.recommendation?'rec':''} ${o.tag==='experimental'?'exp':''}">
@@ -1284,8 +1281,8 @@ async function doOverhaul(input_mode){
   document.getElementById('ovmodal').style.display='none';
   const r=await api('/api/overhaul',{slug:OV_SCOPE,input_mode});
   if(r.error){ alert('Overhaul: '+r.error); return; }
-  if(r.await_brief){ alert('Created 02-intake/overhaul-brief.md — fill it with your direction, then click Overhaul → "I provide a starting point" again to build.'); }
-  else { alert('Creative overhaul started ('+input_mode+') — watch the row log. Parity floor + facts + Hard rules are preserved; the swing is expression-only.'); }
+  if(r.await_brief){ alert('Created 02-intake/overhaul-brief.md — paste your direction into it, then click Creative / Wow build → "Guide with text" again to build.'); }
+  else { alert('Creative / Wow build started ('+input_mode+', from scratch — boards bypassed) — watch the row log. Parity floor + facts + Hard rules preserved; the swing is expression-only.'); }
   load();
 }
 function md2html(src){
@@ -1466,8 +1463,6 @@ class H(BaseHTTPRequestHandler):
             if not test_creds_ready(cdir):   # precondition gate (defense in depth)
                 return self._send(json.dumps({"error": "rehearsal TEST credentials missing in 02-intake/secrets/.env"}), "application/json", 400)
             variant = fb["variant"]
-            dmode = "creative" if d.get("design_mode") == "creative" else "standard"
-            set_design_mode(cdir, dmode)      # build-start entry point for creative/overhaul
             if not fb.get("resumable"):       # fresh run: lay down the step artifact; resume keeps it
                 init_full_build(cdir, variant)
             with TASK_LOCK:
@@ -1476,29 +1471,39 @@ class H(BaseHTTPRequestHandler):
                 TASKS[slug] = {"kind": "full build", "label": f"full build ({variant})", "started": now(), "tail": [], "proc": None}
             bump(cdir, msg=f"FULL BUILD {'resumed' if fb.get('resumable') else 'started'} ({variant})")
             threading.Thread(target=run_advance,
-                             args=(slug, full_build_runbook(slug, variant, dmode), "full build", "full_build_failed"),
+                             args=(slug, full_build_runbook(slug, variant), "full build", "full_build_failed"),
                              daemon=True).start()
-            return self._send(json.dumps({"ok": True, "variant": variant, "design_mode": dmode}), "application/json")
+            return self._send(json.dumps({"ok": True, "variant": variant}), "application/json")
         elif path == "/api/overhaul":
-            # Boards entry point for creative/overhaul (the SAME design_mode:creative as build-start).
+            # THE single Creative/Wow entry point (boards step). One clean path: creative ALWAYS
+            # injects creative_clause via overhaul_runbook — never a silent downgrade to standard.
             slug = slugify(d.get("slug", "")); cdir = CLIENTS / slug
             if not cdir.exists():
                 return self._send(json.dumps({"error": "no such client"}), "application/json", 404)
             input_mode = "brief" if d.get("input_mode") == "brief" else "claude"
             set_design_mode(cdir, "creative", input_mode)
             brief = cdir / "02-intake" / "overhaul-brief.md"
-            if input_mode == "brief" and not brief.exists():
+            if input_mode == "brief" and not brief.exists():   # arm: create the brief, await the human
                 brief.write_text(OVERHAUL_BRIEF_TEMPLATE.format(slug=slug))
-                bump(cdir, msg="OVERHAUL armed (creative, brief mode) — awaiting 02-intake/overhaul-brief.md")
+                bump(cdir, msg="CREATIVE/WOW armed (guide-with-text) — awaiting 02-intake/overhaul-brief.md")
                 return self._send(json.dumps({"ok": True, "await_brief": True, "created": True,
-                                              "msg": "Fill 02-intake/overhaul-brief.md, then run Overhaul again to build."}), "application/json")
+                                              "msg": "Fill 02-intake/overhaul-brief.md, then run Creative / Wow build again to build."}), "application/json")
             with TASK_LOCK:
                 if slug in TASKS:
                     return self._send(json.dumps({"error": "a Claude task is already running for this client"}), "application/json", 409)
-                TASKS[slug] = {"kind": "overhaul", "label": f"creative overhaul ({input_mode})", "started": now(), "tail": [], "proc": None}
-            bump(cdir, msg=f"OVERHAUL started (creative, {input_mode})")
+                TASKS[slug] = {"kind": "overhaul", "label": f"creative/wow build ({input_mode})", "started": now(), "tail": [], "proc": None}
+            # Creative BYPASSES the A/B/C boards — close any open concept-board decision so the card clears.
+            dd = decisions_dir(slug)
+            if dd.exists():
+                for f in dd.glob("*-OPEN-*.yaml"):
+                    if any(o.get("thumb") for o in parse_decision(f)["options"]):
+                        (dd / f.name.replace("-OPEN-", "-RESOLVED-")).write_text(
+                            f.read_text().rstrip() + f'\nchosen: creative-wow-bypass\nchosen_at: "{now()}"\n')
+                        f.unlink()
+                        bump(cdir, msg="concept boards BYPASSED — Creative/Wow build chosen")
+            bump(cdir, msg=f"CREATIVE/WOW build started (from scratch, {input_mode})")
             threading.Thread(target=run_advance,
-                             args=(slug, overhaul_runbook(slug, input_mode), "overhaul", "overhaul_failed"),
+                             args=(slug, overhaul_runbook(slug, input_mode), "creative/wow build", "overhaul_failed"),
                              daemon=True).start()
             return self._send(json.dumps({"ok": True, "design_mode": "creative", "input_mode": input_mode}), "application/json")
         elif path == "/api/push-further":

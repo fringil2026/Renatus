@@ -132,18 +132,29 @@ the screenshots as clickable thumbnails (served via `/api/concept-thumb`), recom
 badges marked. Choosing any letter resolves it as before; full-build-from-scratch auto-accepts Board B —
 wow stays human-in-the-loop.
 
-**The creativity model (ONE hierarchy, no overlaps).** Three tiers; "creative mode" and "overhaul
-button" are the SAME capability reached two ways:
+**The creativity model (ONE hierarchy, no overlaps).** Three tiers; creative is **ONE button, ONE
+entry point**:
 | Control | When it appears | What it does | Input modes |
 |---|---|---|---|
-| **STANDARD** | always (default) | clean, purpose-fit; full Design QA Gate + brand moment | — |
+| **STANDARD** | always (default) | clean, purpose-fit; full Design QA Gate + brand moment. Built via **Advance / Full build — standard BY DESIGN, they ignore `design_mode`** | — |
 | **PUSH FURTHER** (🔥) | on the boards card, after A/B/C exist | generates ONE bolder board (D, then E; cap 2) — a board generator, standard effort | — |
-| **OVERHAUL / CREATIVE** (🎨) | Full-build creative toggle (build start) **AND** the Overhaul button (boards card) | `design_mode: creative` — from-scratch reimagining with full creative craft = **disciplined graphic richness + smooth interactivity** (section scroll narrative, scroll-reveals, hover category tiles, slide-out drawers, condensing sticky header, ONE signature motion moment) | "Claude develops it" · "I provide a starting point" (`overhaul-brief.md`, Mode-B trade-dress guardrail) |
+| **CREATIVE / WOW build** (🎨) | **ONE button on the boards decision card** (the boards step) | `design_mode: creative` — **bypasses the A/B/C boards** and builds **from scratch** with full creative craft = **disciplined graphic richness + smooth interactivity** (section scroll narrative, scroll-reveals, hover category tiles, slide-out drawers, condensing sticky header, ONE signature motion moment) | **"Claude develops it"** (Claude reaches on its own) · **"Guide with text"** (paste a direction into `overhaul-brief.md`) — both build from scratch |
 
-Code: ONE flag `design_mode` (status.json) set by BOTH `/api/full-build` (`design_mode` param) and
-`/api/overhaul` (`input_mode`); ONE `creative_clause()` feeds both `full_build_runbook(…, "creative")`
-and `overhaul_runbook()`. **Three HARD invariants across every tier:** parity floor untouched · all
-Hard rules untouched · expression-only (layout/type/color/motion/graphics, never facts/features/guardrails).
+Code (ONE clean path, no silent downgrade): the **Creative / Wow build** button (`renderNeeds` →
+`openOverhaul` → `#ovmodal`) hits **`/api/overhaul`** only; it sets `design_mode: creative`
+(+ `overhaul_input`) via `set_design_mode`, closes any open A/B/C board decision (bypass), and enqueues
+`overhaul_runbook()` which ALWAYS injects `creative_clause()`. Brief mode creates/awaits
+`02-intake/overhaul-brief.md` (first click arms it, second click builds). **Advance and Full build are
+standard by design** and do not read `design_mode`. **Three HARD invariants across every tier:** parity
+floor untouched · all Hard rules untouched · expression-only (layout/type/colour/motion/interactivity/
+graphics, never facts/features/guardrails); the verification loop / parity checklist still runs.
+
+**Known open items (not yet implemented — tracked here so they're not lost):**
+- *Gap #3* — no pre-built motion/interaction components in the archetype (`src/` has no drawer /
+  scroll-reveal / condensing-header scaffolding); the creative build authors them from scratch each
+  time per `creative_clause`. A future archetype motion kit would make creative builds cheaper + consistent.
+- *Gap #4* — no creative-specific iteration budget; creative uses the same verification-loop HARD CAP
+  of 5 as standard.
 
 ## 5 · Troubleshooting workflow (incidents — diagnose THEN fix)
 When the human reports something broken, the studio does NOT start editing — it materializes an
