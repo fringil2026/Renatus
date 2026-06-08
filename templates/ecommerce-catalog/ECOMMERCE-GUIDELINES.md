@@ -184,8 +184,16 @@ texture (grain, mounts, ruled ornament) is negotiable and removed where it adds 
   slot and a photography ask (with exact specs: large originals ≥2000px, product shots plus
   habitat/environment shots) is added to the deliverables request.
 - All photo slots are built to gracefully accept large imagery, so new photography upgrades the
-  site with zero layout rework.
+  site with zero layout rework (as real photography arrives per D-2.7.4 the design goes fully photo-led).
 - ONE cropping/color treatment per site.
+- **No-photo / below-minimum fallback is a FIRST-CLASS designed object — never a bare text card or a
+  visible placeholder:** a refined typographic composition (the Latin binomial AS the visual) on a
+  muted tonal field, with an original botanical line-motif, generous space, and the SAME hover/motion
+  polish as a photo card. **QA gate:** photo-cards and no-photo cards side by side must read as ONE
+  modern system; if the fallback reads "degraded," iterate.
+- **Restrained, natural palette [HARD]:** muted, understated, natural tones; stay away from strong /
+  saturated colour. Photography + whitespace carry the interest — the PLANTS provide the colour, the
+  interface stays quiet. (On the creative path, colour interlude bands are MUTED bands, never vivid.)
 
 ### 5.5 Place-based organization (when origin data exists) [DEFAULT]
 Where products carry origin data, derive region collections (`/origin/<region>/`): a full-bleed
@@ -241,7 +249,8 @@ two ways — never two features.
 - **OVERHAUL / CREATIVE** — the maximal swing: a from-scratch reimagining with full creative craft,
   which means BOTH dimensions of ONE ambition:
   1. **Disciplined graphic richness** — the editorial art direction of §5.2 dialled up (oversized type
-     as artwork, full-bleed colour interludes, layered composition), held to the distinctiveness bar
+     as artwork, MUTED full-bleed colour interludes (never vivid — restrained natural palette per §5.4),
+     layered composition), held to the distinctiveness bar
      (§5.6) and the clean-expression discipline (§5.3).
   2. **Smooth modern interactivity** — the navigation/motion layer (principles & feel ONLY from study
      of well-made orchid vendors — atlas exotics, krull-smith, palmer orchids — never their markup,

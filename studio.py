@@ -367,7 +367,8 @@ def creative_clause(input_mode):
            "UI). Mode-B originality guardrail.")
     return ("DESIGN MODE = CREATIVE (the Overhaul — the maximal swing): reimagine FROM SCRATCH with full "
             "creative craft = BOTH (1) disciplined graphic richness (editorial art direction dialled up: "
-            "oversized type as artwork, full-bleed colour interludes, layered composition) AND (2) smooth "
+            "oversized type as artwork, MUTED full-bleed colour interludes (never vivid — restrained "
+            "natural palette; the plants provide the colour), layered composition) AND (2) smooth "
             "modern interactivity — section-based scroll narrative, scroll-reveal animations "
             "(IntersectionObserver + CSS, no heavy library), hover category tiles as the 'shop by' entry, "
             "slide-out drawers (cart/wishlist/filters/mobile-nav, transforms, no reloads), a condensing "
