@@ -58,6 +58,10 @@ JSON-LD builders: `src/lib/schema.ts`. Client facts: `src/config/site.ts`. Token
 in `src/styles/global.css` (mirror `tokens.json`).
 
 ## Hard rules — never violate
+- CARE GUIDES ARE OPT-IN (studio-wide): care sheets / "how to grow" / per-genus care pages are NOT
+  built by default and are NEVER recommended — build them only on the human's EXPLICIT request. The
+  archetype retains the capability (`src/lib/care.ts` is kept dormant; recreate `src/pages/care/` +
+  the nav/footer/home links on request). Default nav/footer/home carry NO care link.
 - ADMIN COMPLETENESS: an admin build is NOT done until it covers EVERY non-deferred field in
   BACKEND.md §B and EVERY non-deferred block in §C — a partial admin UI is a BUILD FAILURE.
   Apply the field-completeness rule (walk the owner's week). Deferring an item is allowed only

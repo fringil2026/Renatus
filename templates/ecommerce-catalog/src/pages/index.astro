@@ -27,16 +27,11 @@ const fresh = inStock().filter((p) => p.slug !== featured?.slug).slice(0, 6);
 
   <!-- Homepage entry points — each new-vs-old-site feature one click away (Edit 003) -->
   <section class="mx-auto max-w-[75rem] px-5 pb-4">
-    <div class="grid grid-cols-1 gap-5 sm:grid-cols-3">
+    <div class="grid grid-cols-1 gap-5 sm:grid-cols-2">
       <a href="/shop/" class="lift botanical-rule border border-line bg-paper p-5 pt-4">
         <p class="eyebrow eyebrow--leaf">Search &amp; filter</p>
         <h3 class="latin mt-1 text-2xl text-ink">Find an orchid fast</h3>
         <p class="mt-2 text-sm text-ink/75">Search by name, or filter by genus, care level, and what's in bloom.</p>
-      </a>
-      <a href="/care/" class="lift botanical-rule border border-line bg-paper p-5 pt-4">
-        <p class="eyebrow eyebrow--leaf">Care guides</p>
-        <h3 class="latin mt-1 text-2xl text-ink">Learn how to grow it</h3>
-        <p class="mt-2 text-sm text-ink/75">A practical guide for every genus we sell — light, water, temperature, difficulty.</p>
       </a>
       <a href="/conservatory/" class="lift botanical-rule border border-line bg-paper p-5 pt-4">
         <p class="eyebrow eyebrow--leaf">Currently growing</p>

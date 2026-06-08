@@ -96,8 +96,13 @@ classification default · common unblock fact.
   (AOS/AM/FCC badges), shipping/returns policy, guarantees, location/hours.
 - **Signals:** `care`, `how to grow`, `blog`, `article`, `FAQ`, `about`, `AM/AOS`, `FCC`,
   `shipping`, `returns`, `guarantee`, `hours`, `location`.
-- **Default:** CARRY-OVER (static content) — except where owner direction drops it (e.g. care
-  guides removed per client) → record the removal.
+- **Default:** CARRY-OVER (static content) for FAQ / about / shipping / returns / guarantees /
+  location-hours / awards.
+- **EXCEPTION — care guides / "how to grow" / care sheets are OPT-IN, studio-wide:** documented in the
+  census for parity (so the original is understood) but **recommend-OFF with reason and NEVER
+  auto-built** — they are high-upkeep editorial content. Build them ONLY on the human's explicit
+  request (the archetype keeps the capability: `src/lib/care.ts` + re-created `src/pages/care/`).
+  Surface as a JUDGMENT note, not a default CARRY-OVER.
 
 ### 9. PRODUCT-LEVEL DETAIL
 - **Find:** variant/option selectors (pot size, "choose 4\" or 6\""), multiple images/galleries,
