@@ -149,6 +149,13 @@ standard by design** and do not read `design_mode`. **Three HARD invariants acro
 floor untouched · all Hard rules untouched · expression-only (layout/type/colour/motion/interactivity/
 graphics, never facts/features/guardrails); the verification loop / parity checklist still runs.
 
+**Images on the creative path (fixed — WS-INC-STUDIO).** Because creative reimagines components FROM
+SCRATCH, dropped images were a real failure mode (no carry-over instruction + the loop wasn't invoked
++ no image row). Now: `creative_clause` explicitly orders "carry over EVERY source image (re-import the
+records); expression changes HOW shown, never WHETHER"; `overhaul_runbook` RUNS the verification loop
+(FAIL+iterate, never ship incomplete); and the parity checklist gained a standing gate **"Every source
+image present in build"**. Image carry-over is a parity-floor obligation on creative, same as features.
+
 **Known open items (not yet implemented — tracked here so they're not lost):**
 - *Gap #3* — no pre-built motion/interaction components in the archetype (`src/` has no drawer /
   scroll-reveal / condensing-header scaffolding); the creative build authors them from scratch each

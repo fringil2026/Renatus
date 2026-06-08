@@ -373,7 +373,10 @@ def creative_clause(input_mode):
             "slide-out drawers (cart/wishlist/filters/mobile-nav, transforms, no reloads), a condensing "
             "sticky header + smooth anchored nav, and ONE signature motion moment. Motion SERVES "
             f"navigation not decoration. {src} INVARIANTS HOLD UNCHANGED: the parity floor (every "
-            "CARRY-OVER feature) stays; every studio + archetype Hard rule stays; prefers-reduced-motion "
+            "CARRY-OVER feature) stays; CARRY OVER EVERY SOURCE IMAGE — re-import the image records "
+            "(00-source/01-baseline) into the reimagined components; the from-scratch reimagining changes "
+            "HOW each image/feature is expressed, NEVER WHETHER it appears (dropping an image is a parity "
+            "failure, not a creative choice); every studio + archetype Hard rule stays; prefers-reduced-motion "
             "honoured absolutely + keyboard/screen-reader paths unaffected; the swing is EXPRESSION-ONLY "
             "(layout / type / colour / motion / interactivity / graphics), never facts, features, or "
             "guardrails; photography stays resolution-limited (smoothness from motion + spacing + graphics, "
@@ -383,8 +386,11 @@ def creative_clause(input_mode):
 def overhaul_runbook(slug, input_mode):
     return (f"OVERHAUL (creative reimagining) for {slug}. Assemble — or re-assemble — the prototype per "
             f"Command 1, but in creative mode. {creative_clause(input_mode)} On any human-judgment fork, "
-            f"open a decision (resume_job set) and STOP. PUBLISH-ALWAYS at the end; report what changed "
-            f"and confirm the three invariants held.")
+            f"open a decision (resume_job set) and STOP. Then RUN THE VERIFICATION LOOP against dist/ "
+            f"(01-baseline/parity-checklist.md) INCLUDING the 'every source image present in build' row — "
+            f"FAIL and iterate rather than ship incomplete; NEVER drop an image or feature. PUBLISH-ALWAYS "
+            f"only after the loop passes; report what changed, the checklist verdicts, and confirm the "
+            f"three invariants held.")
 
 def full_build_runbook(slug, variant):
     """The chain instruction handed to `claude -p`. Self-describing + resumable via the progress

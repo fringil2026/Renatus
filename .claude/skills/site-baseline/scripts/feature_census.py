@@ -144,6 +144,7 @@ STANDING_GATES = [
     ("noindex present", "dist/ HTML contains robots noindex unless PUBLIC_INDEXABLE=true"),
     ("Mobile ~390px structure", "layout holds at a 390px viewport — no horizontal overflow / broken grid"),
     ("Correspondence verifier 0 mismatches", "verify_catalog.py reports 0 mismatches over the built catalog"),
+    ("Every source image present in build", "no image dropped: every product/source image in 00-source/01-baseline appears in dist/ (count built <img>/specimens vs source image records) — binding on the creative/overhaul path, which reimagines components from scratch"),
     ("Brand moment named + placed", "the concept names the brand moment AND where it lives; it is present in dist/"),
 ]
 
