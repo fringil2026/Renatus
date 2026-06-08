@@ -66,6 +66,13 @@ protection).
 14. **[HARD] State lives in artifacts, not memory.** Specs, edits, deliverables,
     backend-configs, and decisions are signed/state-named files. Filename is state
     (`NNN-PENDING-…` → `NNN-DONE-…`/`NNN-BLOCKED-…`). DONE/BLOCKED/RESOLVED files are immutable.
+15. **[HARD] Maintenance-realism — build only what the owner will realistically keep ACCURATE.**
+    A feature whose value depends on constant manual updates is a liability when it goes stale.
+    HIGH-MAINTENANCE features (e.g. in-bud / in-bloom / in-spike status, "new this week", curated
+    "featured" rotations) are documented in the census FOR PARITY but **recommend-OFF with reason,
+    surfaced as a JUDGMENT decision, and NEVER auto-built.** Bias hard toward features that stay
+    correct with little owner effort — stock-driven availability, search, category/genus nav.
+    **In-spike / in-bloom status is OFF by default** (opt-in on explicit request only).
 
 ---
 

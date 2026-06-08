@@ -58,7 +58,11 @@ classification default · common unblock fact.
   bestseller, "blooming size".
 - **Signals:** text `new`, `in (bud|bloom|spike)`, `blooming size`, `featured`, `bestseller`,
   `limited`, `seasonal`; badge/flag CSS classes on cards.
-- **Default:** CARRY-OVER (status is a product-record flag the catalog renders).
+- **Default:** CARRY-OVER for LOW-UPKEEP, stable badges (`blooming size`, `bestseller`, `seasonal`).
+- **HIGH-MAINTENANCE (recommend-OFF, JUDGMENT, never auto-built — §1 rule 15):** live status that
+  decays without constant manual updates — **in-bud / in-bloom / in-spike**, "new this week", curated
+  "featured" rotations. Document for parity, but OFF by default; build only on explicit request. Prefer
+  stock-driven availability (self-maintaining) over hand-set bloom flags.
 
 ### 4. INVENTORY SIGNALS
 - **Find:** stock counts (the `(16)` quantity tags), low-stock, pre-order, "ships after <date>",

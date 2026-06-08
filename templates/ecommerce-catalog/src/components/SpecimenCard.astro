@@ -18,7 +18,6 @@ const attrs = [product.origin, `${product.difficulty} care`].filter(Boolean).joi
   <div class="flex flex-1 flex-col gap-2 px-5 pb-6 pt-4">
     <div class="flex items-start justify-between gap-3">
       <a href={href}><h3 class="latin text-2xl leading-tight text-ink group-hover:text-petal">{latin(product)}</h3></a>
-      {product.bloom_now && available && <span class="eyebrow eyebrow--leaf shrink-0 pt-1" title="In bloom now">In Bloom</span>}
     </div>
     <p class="text-sm text-ink/70">{product.common_name}</p>
     <p class="mono-label">{attrs}</p>

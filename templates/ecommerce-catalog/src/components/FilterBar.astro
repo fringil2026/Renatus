@@ -25,7 +25,6 @@ const generaList = genera();
         <option value="name">Name A–Z</option>
         <option value="price-asc">Price: low to high</option>
         <option value="price-desc">Price: high to low</option>
-        <option value="bloom">In bloom first</option>
       </select>
     </label>
     <label class="flex items-center gap-2 text-sm">
@@ -34,10 +33,6 @@ const generaList = genera();
         <option value="all">Any</option>
         {difficulties.map((d) => <option value={d}>{d}</option>)}
       </select>
-    </label>
-    <label class="flex cursor-pointer items-center gap-2 text-sm">
-      <input type="checkbox" data-bloom class="accent-petal" />
-      <span class="mono-label">In bloom now</span>
     </label>
   </div>
 </div>

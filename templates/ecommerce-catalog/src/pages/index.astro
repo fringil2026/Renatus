@@ -3,9 +3,9 @@ import Base from "../layouts/Base.astro";
 import Hero from "../components/Hero.astro";
 import SpecimenCard from "../components/SpecimenCard.astro";
 import { SITE } from "../config/site";
-import { inStock, bloomingNow } from "../lib/products";
+import { inStock } from "../lib/products";
 
-const featured = bloomingNow()[0] ?? inStock()[0];
+const featured = inStock()[0];
 const fresh = inStock().filter((p) => p.slug !== featured?.slug).slice(0, 6);
 ---
 <Base title={`${SITE.name} — ${SITE.tagline}`} description={SITE.tagline}>
@@ -31,7 +31,7 @@ const fresh = inStock().filter((p) => p.slug !== featured?.slug).slice(0, 6);
       <a href="/shop/" class="lift botanical-rule border border-line bg-paper p-5 pt-4">
         <p class="eyebrow eyebrow--leaf">Search &amp; filter</p>
         <h3 class="latin mt-1 text-2xl text-ink">Find an orchid fast</h3>
-        <p class="mt-2 text-sm text-ink/75">Search by name, or filter by genus, care level, and what's in bloom.</p>
+        <p class="mt-2 text-sm text-ink/75">Search by name, or filter by genus and care level.</p>
       </a>
       <a href="/conservatory/" class="lift botanical-rule border border-line bg-paper p-5 pt-4">
         <p class="eyebrow eyebrow--leaf">Currently growing</p>
