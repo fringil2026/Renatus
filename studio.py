@@ -1053,6 +1053,15 @@ function esc(s){ return (s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>'
 function findC(slug){ return DATA.clients.find(x=>x.slug===slug); }
 async function openSession(key){ await api('/open',{slug:key==='studio'?'':key, studio:key==='studio'}); }
 function saveDrafts(){ chatOpen.forEach(k=>{ const t=document.getElementById('cin-'+k); if(t) chatDraft[k]=t.value; }); }
+// Preserve transient row UI state across the 4s full re-render (general — every client row):
+// in-progress text (paste/report) via [data-keep], and non-default radios/checkboxes.
+function snapState(){ const s={vals:{},radios:{}};
+  document.querySelectorAll('#list [data-keep]').forEach(el=>{ s.vals[el.getAttribute('data-keep')]=el.value; });
+  document.querySelectorAll('#list input[type=radio]:checked').forEach(el=>{ if(el.name) s.radios[el.name]=el.value; });
+  return s; }
+function restoreState(s){
+  document.querySelectorAll('#list [data-keep]').forEach(el=>{ const v=s.vals[el.getAttribute('data-keep')]; if(v!==undefined) el.value=v; });
+  Object.keys(s.radios).forEach(name=>{ const el=document.querySelector('#list input[type=radio][name="'+name+'"][value="'+s.radios[name]+'"]'); if(el) el.checked=true; }); }
 function restoreChats(){ chatOpen.forEach(k=>{ const p=document.getElementById('chat-'+k); if(p){ p.style.display='block';
   const t=document.getElementById('cin-'+k); if(t&&chatDraft[k]!==undefined) t.value=chatDraft[k]; renderChat(k);} }); }
 function toggleChat(key){ const p=document.getElementById('chat-'+key); if(!p) return;
@@ -1164,6 +1173,7 @@ async function load(){
   if(sr) sr.innerHTML=(d.studio_reports&&d.studio_reports.length)?`<span class="mono-label">studio reports${newDot('__studio__',d.studio_reports)}</span> `+d.studio_reports.slice(0,8).map(r=>`<button class="docbtn" onclick="openReport('__studio__','${r.file}','${d.studio_reports[0].file}')" title="${esc(r.summary)}">${esc(r.kind)} · ${r.ts}</button>`).join(' '):'';
   const el = document.getElementById('list');
   if(!d.clients.length){ el.innerHTML='<p class="empty">No active clients — start one above.</p>'; return; }
+  const KEEP = snapState();
   el.innerHTML = d.clients.map(c=>`<div class="row${c.done?' fin':''}">
     <div class="top"><div><span class="nm">${c.name}</span> <span class="dom">${c.domain}</span></div>
     <div class="btns"><span class="chip">${c.stage}</span>
@@ -1189,7 +1199,7 @@ async function load(){
     ${c.concepts&&c.concepts.length?`<div class="docs"><span class="mono-label">concept boards</span> ${c.concepts.map(b=>`<a class="docbtn" href="${b.url||'#'}" target="_blank" rel="noopener" title="${esc(b.one_liner)}">${b.recommended?'★ ':''}${esc(b.name)} ↗</a><a class="docbtn" href="/api/concept-thumb?slug=${c.slug}&name=${esc(b.thumb_desktop)}" target="_blank" rel="noopener" title="desktop screenshot">🖼 png</a>`).join(' ')}</div>`:''}
     ${c.reports&&c.reports.length?`<div class="docs"><span class="mono-label">reports${newDot(c.slug,c.reports)}</span> ${c.reports.slice(0,8).map(r=>`<button class="docbtn" onclick="openReport('${c.slug}','${r.file}','${c.reports[0].file}')" title="${esc(r.summary)}">${esc(r.kind)} · ${r.ts}</button>`).join(' ')}</div>`:''}
     <form class="report" onsubmit="return reportProblem(event,'${c.slug}')">
-      <input type="text" placeholder="Report a problem — what's broken? (becomes an incident, then a diagnostic)" required>
+      <input type="text" data-keep="report-${c.slug}" placeholder="Report a problem — what's broken? (becomes an incident, then a diagnostic)" required>
       <button class="ghost">Report ⚑</button>
     </form>
     <form class="drop" onsubmit="return up(event,'${c.slug}')">
@@ -1206,9 +1216,10 @@ async function load(){
         <button>Send</button></form>
     </div>
     ${c.paste?`<form class="paste" onsubmit="return answers(event,'${c.slug}')">
-      <textarea placeholder="Step 2 — paste the owner's questionnaire summary here…"></textarea>
+      <textarea data-keep="answers-${c.slug}" placeholder="Step 2 — paste the owner's questionnaire summary here…"></textarea>
       <button>Save owner answers</button></form>`:''}
     <div class="log">${c.log.join('\\n')}</div></div>`).join('');
+  restoreState(KEEP);
   restoreChats();
 }
 async function newClient(e){ e.preventDefault();
