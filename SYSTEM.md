@@ -117,6 +117,13 @@ its raw name → never matched `NNN-PENDING-*` → silently ignored):
 `create_edit` auto-numbers via `_next_edit_n` (**highest existing NNN + 1**, robust to DONE/BLOCKED
 gaps). Both paths give explicit success feedback (`✓ created NNN-PENDING-…`) — never a silent no-op.
 
+**Processing them — the actuator (`/api/process-edits`).** Creating a PENDING edit does NOT process
+it; that was the broken link (edits piled up PENDING, never built/deployed). A row with PENDING edits
+shows a **"✎ Process N edits"** button (`pending_edits_count()` → payload `pending_edits`) that POSTs
+`/api/process-edits` → `run_advance(slug, "Process edits for <slug>")` (CLAUDE.md Command 5): each
+PENDING edit is implemented, the site builds, and the studio-owned publish net deploys — so the
+preview URL refreshes. Edits stay visible (and the button stays) until they're DONE/BLOCKED.
+
 ### 3b · Stale-code defenses (kill the "dashboard is serving old code" class of bug)
 The recurring root cause behind missing-buttons / inaccessible-creative-mode / reverting-radio /
 broken-upload symptoms was a parallel or older `studio.py` serving stale code. Four defenses:

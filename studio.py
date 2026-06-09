@@ -964,6 +964,10 @@ def open_incident_count(slug):
     dd = incidents_dir(slug)
     return len(list(dd.glob("*-OPEN-*.md"))) if dd.exists() else 0
 
+def pending_edits_count(slug):
+    ed = CLIENTS / slug / "02-intake" / "edits"
+    return len(list(ed.glob("*-PENDING-*.md"))) if ed.exists() else 0
+
 def _incident_symptom(path):
     try:
         lines = path.read_text(errors="ignore").splitlines()
@@ -1116,6 +1120,7 @@ def list_clients():
                     "busy": d.name in TASKS,
                     "decisions_open": open_decision_count(d.name),
                     "incidents_open": open_incident_count(d.name),
+                    "pending_edits": pending_edits_count(d.name),
                     "reports": list_reports(d.name),
                     "design_mode": read_status(d).get("design_mode", "standard"),
                     "versions": st.get("versions", []),
@@ -1242,6 +1247,7 @@ padding:.5rem .7rem;margin-top:.5rem;white-space:pre-wrap;max-height:9rem;overfl
 .citem .lk{color:#7fd18f}.citem .rsn{color:var(--muted);font-family:var(--m);font-size:.66rem}
 .cfgdef summary{cursor:pointer;color:var(--muted);font-family:var(--m);font-size:.72rem}
 button.adv.fb{border-color:#7a4dff;color:#b79cff}
+button.adv.pe{border-color:#caa15a;color:#e8c98a}
 button.adv.fb:hover:not([disabled]){background:#7a4dff;color:#fff}
 button.adv.fb[disabled]{color:var(--muted);border-color:var(--line);opacity:.6}
 .fbsteps{margin-top:.6rem;border:1px solid #3a2f5e;background:#140e22;padding:.6rem .8rem;font-family:var(--m);font-size:.66rem}
@@ -1574,6 +1580,7 @@ function liveZone(c){ return `<div class="live">
       ${c.incidents_open?`<span class="incbadge">${c.incidents_open} incident${c.incidents_open>1?'s':''}</span>`:''}
       ${c.design_mode==='creative'?'<span class="cvbadge">CREATIVE</span>':''}
       ${c.busy?'<span class="run">● running…</span>':''}
+      ${c.pending_edits?`<button class="adv pe" ${c.busy?'disabled':''} title="Implement the ${c.pending_edits} PENDING edit${c.pending_edits>1?'s':''} in 02-intake/edits/, then build + deploy (preview URL refreshes)." onclick="processEdits('${c.slug}')">✎ Process ${c.pending_edits} edit${c.pending_edits>1?'s':''}</button>`:''}
       ${c.advance?`<button class="adv" ${c.advance.enabled?'':'disabled'} title="${(c.advance.tooltip||c.advance.desc||'').replace(/"/g,'&quot;')}" onclick="openAdvance('${c.slug}')">${c.advance.label}</button>${c.advance.badge?`<span class="rehbadge">${c.advance.badge}</span>`:''}<span class="copy" title="Copy terminal command" onclick="cpCmd('${c.slug}')">⧉</span>`:''}
       ${c.full_build?`<button class="adv fb" ${c.full_build.enabled?'':'disabled'} title="${(c.full_build.tooltip||c.full_build.desc||'').replace(/"/g,'&quot;')}" onclick="openFullBuild('${c.slug}')">${c.full_build.resumable?'⟳ ':'⚡ '}${c.full_build.label}</button>`:''}
       ${c.can_configure?`<button class="ghost" onclick="configBackend('${c.slug}')">Configure backend${c.backend_cfg?` · ${c.backend_cfg.status} v${c.backend_cfg.version}`:''}</button>`:''}
@@ -1623,6 +1630,11 @@ async function newClient(e){ e.preventDefault();
 async function answers(e,slug){ e.preventDefault();
   await api('/answers', {slug, t:e.target.querySelector('textarea').value}); load(); return false; }
 async function act(p,slug){ await api(p,{slug}); load(); }
+async function processEdits(slug){
+  const r=await api('/api/process-edits',{slug});
+  if(r.error){ alert('Process edits: '+r.error); }
+  else { alert('Processing PENDING edits for '+slug+' — watch the row log. Each edit is implemented, then the site builds and the preview URL refreshes.'); load(); }
+}
 function cp(t){ navigator.clipboard&&navigator.clipboard.writeText(t); }
 function renderNeeds(decs, incs){
   incs = incs||[];
@@ -1924,6 +1936,23 @@ class H(BaseHTTPRequestHandler):
                     return self._send(json.dumps({"error": "a Claude task is already running for this client"}), "application/json", 409)
                 TASKS[slug] = {"kind": "advance", "label": act["command"], "started": now(), "tail": [], "proc": None}
             threading.Thread(target=run_advance, args=(slug, act["command"]), daemon=True).start()
+            return self._send(json.dumps({"ok": True}), "application/json")
+        elif path == "/api/process-edits":
+            # The missing actuator: dashboard creates NNN-PENDING edits but nothing processed them.
+            # Spawn `claude -p "Process edits for <slug>"` (CLAUDE.md Command 5) via run_advance, which
+            # implements each PENDING edit, builds, and (publish-net) deploys — so the preview refreshes.
+            slug = slugify(d.get("slug", "")); cdir = CLIENTS / slug
+            if not cdir.exists():
+                return self._send(json.dumps({"error": "no such client"}), "application/json", 404)
+            if pending_edits_count(slug) == 0:
+                return self._send(json.dumps({"error": "no PENDING edits to process"}), "application/json", 400)
+            cmd = f"Process edits for {slug}"
+            with TASK_LOCK:
+                if slug in TASKS:
+                    return self._send(json.dumps({"error": "a Claude task is already running for this client"}), "application/json", 409)
+                TASKS[slug] = {"kind": "process edits", "label": cmd, "started": now(), "tail": [], "proc": None}
+            bump(cdir, msg=f"PROCESS EDITS started ({pending_edits_count(slug)} pending)")
+            threading.Thread(target=run_advance, args=(slug, cmd, "process edits", "process_edits_failed"), daemon=True).start()
             return self._send(json.dumps({"ok": True}), "application/json")
         elif path == "/api/full-build":
             slug = slugify(d.get("slug", ""))
