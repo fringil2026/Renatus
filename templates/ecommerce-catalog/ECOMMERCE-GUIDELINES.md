@@ -201,6 +201,23 @@ texture (grain, mounts, ruled ornament) is negotiable and removed where it adds 
 - **Restrained, natural palette [HARD]:** muted, understated, natural tones; stay away from strong /
   saturated colour. Photography + whitespace carry the interest — the PLANTS provide the colour, the
   interface stays quiet. (On the creative path, colour interlude bands are MUTED bands, never vivid.)
+- **Muted ≠ flat or dead [HARD — applies in ALL modes: standard, creative, image-led].** Colour
+  fields and backgrounds must feel ALIVE and atmospheric, never a single solid paint-swatch block.
+  - **Tone stays soft + low-saturation** — natural, understated; the plants/photos provide the real
+    colour. This rule REFINES the restraint above, it does not loosen it.
+  - **Render colour with DEPTH:** subtle gradations, soft tonal shifts, gentle light-to-shadow
+    transitions, layered translucency, faint texture (paper grain, dappled light, mist) — so a
+    "green section" reads as an atmospheric FIELD, not a swatch.
+  - **Quiet life where appropriate:** slow, barely-there background motion (a gentle gradient drift,
+    a soft parallax of a botanical motif, light that shifts on scroll) — felt more than noticed,
+    never pulling the eye off the content.
+  - **DISCIPLINE (so "alive" never breaks restraint — binding):** (a) gradations stay LOW-CONTRAST
+    and within the muted range — soft tonal steps, NEVER vivid candy-gradients or rainbow blends;
+    (b) liveness is ATMOSPHERE not spectacle — it must not compete with photos/products, must not
+    slow finding/buying, stays subtle enough a visitor feels it more than sees it; (c) performance +
+    a11y unchanged — background motion is CSS/transform-based, GPU-friendly, never blocks first
+    paint, and `prefers-reduced-motion` FLATTENS any drift/parallax to a static soft gradient (still
+    NOT a flat block — the gradation/depth persists without motion).
 
 ### 5.5 Place-based organization (when origin data exists) [DEFAULT]
 Where products carry origin data, derive region collections (`/origin/<region>/`): a full-bleed
@@ -219,8 +236,10 @@ Each site ships one memorable signature visual element.
 A build is not done until a recorded self-audit passes: names the concept + signature element;
 zero banned patterns; every image meets its slot minimum, unstretched, correspondence-correct;
 brand moment named, placed, and landing; checked at desktop AND ~390px mobile; honest answer to
-"would a visitor remember this tomorrow?" The audit verbatim goes in the build report or the
-edit's Resolution.
+"would a visitor remember this tomorrow?"; and (all modes) **"do colour fields feel alive and
+atmospheric — soft gradation/depth, not flat blocks — while staying muted, low-contrast, and
+subordinate to the content?" (§5.4).** The audit verbatim goes in the build report or the edit's
+Resolution.
 
 ### 5.8 Concept-board divergence + the wow escalation [HARD]
 Before any prototype, the human chooses from VISUAL concept boards (homepage impressions, not
