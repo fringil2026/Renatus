@@ -325,6 +325,33 @@ two ways — never two features.
   elements form ONE coherent tropical-botanical system that elevates the atmosphere — with the honesty
   boundary intact (no generated element posing as a real product)?"
 
+### 5.10 Multi-version builds — the boards-step choice is MULTI-SELECT
+The design choice at the boards step is **multi-select**: the human may pick **one OR MORE** modes —
+**Standard ecommerce · Image-led · Creative** — to build for this client. Each selected mode produces
+an **independent, complete, honest site** and deploys to its **own preview URL**, so versions can be
+compared side by side.
+- **Advisory, not gate.** Each mode shows a census-derived advisory (e.g. image-led: "recommended —
+  strong photography" or "caution — photos below slot minimums"). The advisory is informational; the
+  **human is the gate.** Selecting image-led on weak photography is allowed and STILL honours the
+  no-upscaling Hard rule (§5.4): below-minimum photos take the first-class type-led fallback, never a
+  stretched image.
+- **Naming / deploy.** The first/primary selection keeps the base project **`ws-<slug>`** (built in
+  `03-site/`); each additional version gets a suffixed project **`ws-<slug>-v2`**, **`-v3`**, … (built
+  in `03-site-v2/`, `03-site-v3/`). `status.json` records each version: its `mode`, `label`,
+  `preview_url`, `published_at`, `project`. The dashboard row lists **all** version URLs, each with
+  copy + timestamp.
+- **Per-version isolation [HARD].** Building or republishing one version never disturbs another. Every
+  version independently carries the **FULL parity floor + every source image + every feature** — only
+  the design EXPRESSION differs (a version that drops a feature/image is a build failure, not a
+  variant). Each runs the verification loop (incl. the "every source image present in build" row).
+- **Single selection = unchanged.** Picking exactly one mode is exactly today's behaviour (one build,
+  base preview URL). Multi-version only engages at 2+.
+- **Choosing later.** Versions can be reviewed at their URLs and one **promoted** as the chosen
+  direction; others can be **archived** (site dir moved to `archive/`, preview project left intact) —
+  never auto-deleted. (Implementation: `studio.py` `run_version_builds()` / `publish_version()` /
+  `version_advisory()`; `/api/build-versions`, `/api/promote-version`, `/api/archive-version`; the
+  boards-card multi-select. SYSTEM.md §3c.)
+
 ---
 
 ## 6. CONTENT & LANGUAGE RULES

@@ -135,6 +135,29 @@ broken-upload symptoms was a parallel or older `studio.py` serving stale code. F
 Convention (CLAUDE.md "studio.py change protocol"): a studio.py edit isn't done until the server is
 restarted AND `version.head == HEAD` with `version.stale == false`.
 
+### 3c · Multi-version builds (the boards-step design choice is MULTI-SELECT)
+At the boards step the human may select **one OR MORE** design modes — **standard · image-led ·
+creative** — each shown with a census-derived advisory (`version_advisory()`; image-led's tone comes
+from `photo_coverage()`). Advisory only — the human is the gate (image-led on weak photography is
+allowed; honest type-led fallback, never upscaled, §5.4).
+- **One build + one URL per selected mode.** `run_version_builds(slug, modes)` drives them
+  SEQUENTIALLY (one Claude task per client): version `i` builds via `version_build_runbook` into
+  `version_site_dirname(i)` (`03-site`, then `03-site-v2`, `03-site-v3`…), then `publish_version(slug,
+  i)` deploys it to `version_project(slug, i)` (`ws-<slug>`, then `ws-<slug>-v2`, …). `publish_version`
+  generalises the studio-owned publish net across projects; `STUDIO_DEPLOY_DRYRUN=1` synthesises URLs
+  without wrangler (plumbing tests).
+- **status.json `versions[]`** — one entry per version `{idx, mode, label, project, site_dir, status,
+  preview_url, published_at, chosen?}`. The base build (idx 0) also mirrors to the legacy
+  `preview_url`/`preview_published_at` so single-version display + the run_advance publish net are
+  unchanged. The row lists ALL version URLs (`versionLinks()`), each with copy + timestamp.
+- **Isolation [HARD]** — each version is a complete, honest site (full parity floor + every image +
+  every feature; only EXPRESSION differs); rebuilding one never touches another.
+- **Single selection = today's behaviour** (one build, base URL). Multi only engages at 2+.
+- **Promote / archive** — `/api/promote-version` records `chosen_version` (never deletes others);
+  `/api/archive-version` moves a non-primary version's site dir to `archive/` (preview project left
+  intact). Endpoints: `/api/build-versions`, `/api/promote-version`, `/api/archive-version`. Doctrine:
+  ECOMMERCE-GUIDELINES §5.10.
+
 ## 4 · Concept boards (the visual concept decision)
 After the scrape, before any prototype, the human picks from real designs spanning a **creativity
 spectrum**, not documents. `.claude/skills/site-baseline/scripts/concept_boards.py` reads

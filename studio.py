@@ -336,6 +336,161 @@ def publish_preview(slug):
         write_status(cdir, st)
         return None
 
+# ---------------- multi-version builds (the boards-step design choice is MULTI-SELECT) ----------
+# Pick one OR MORE modes; each builds an INDEPENDENT, complete, honest site (full parity floor +
+# every source image carried — only the design EXPRESSION differs) into its own output dir and
+# deploys to its own preview project. Primary/first selection keeps the base project ws-<slug>
+# (03-site/); each additional gets ws-<slug>-vN (03-site-vN/). ONE mode = exactly today's behaviour.
+# Per-version isolation: rebuilding/republishing one version never touches another.
+BUILD_MODES = {"standard": "Standard ecommerce", "image-led": "Image-led", "creative": "Creative / Wow"}
+def version_site_dirname(idx): return "03-site" if idx == 0 else f"03-site-v{idx+1}"
+def version_project(slug, idx): return f"ws-{slug}" if idx == 0 else f"ws-{slug}-v{idx+1}"
+
+def photo_coverage(slug):
+    """Best-effort photo coverage (% of products carrying a photo) from whatever built products.json
+    exists — the signal behind the image-led advisory. Returns (pct|None, total)."""
+    for sd in ("03-site", "03-site-v2", "03-site-v3"):
+        f = CLIENTS / slug / sd / "src" / "data" / "products.json"
+        if f.exists():
+            try:
+                data = json.loads(f.read_text())
+                items = data.get("products") if isinstance(data, dict) else data
+                if isinstance(items, list) and items:
+                    withp = sum(1 for p in items if isinstance(p, dict)
+                                and (p.get("photos") or p.get("photo") or p.get("image") or p.get("images")))
+                    return round(100 * withp / len(items)), len(items)
+            except Exception:
+                pass
+    return None, 0
+def version_advisory(slug, mode):
+    """Census-derived advisory shown next to each mode. ADVISORY ONLY — the human is the gate;
+    image-led on weak photography is allowed (honest type-led fallback, NEVER upscaled)."""
+    if mode == "standard":
+        return {"tone": "ok", "text": "always available — clean, conversion-proven"}
+    if mode == "creative":
+        return {"tone": "ok", "text": "always available — from-scratch reimagining; needs no photography"}
+    if mode == "image-led":
+        pct, total = photo_coverage(slug)
+        if pct is None:
+            return {"tone": "neutral", "text": "photo coverage unknown until a prototype exists"}
+        if pct >= 70:
+            return {"tone": "rec", "text": f"recommended — strong photography ({pct}% of {total} have photos)"}
+        return {"tone": "caution", "text": f"caution — photos thin ({pct}% of {total}); below-minimum shots use the honest type-led fallback, never upscaled"}
+    return {"tone": "neutral", "text": ""}
+def version_advisories(slug): return {m: version_advisory(slug, m) for m in BUILD_MODES}
+
+def _set_version_status(cdir, idx, status):
+    st = read_status(cdir)
+    for v in st.get("versions", []):
+        if v.get("idx") == idx: v["status"] = status
+    write_status(cdir, st)
+def publish_version(slug, idx, dryrun=None):
+    """Deploy version <idx>'s built site to ITS OWN project and record it in status.json versions[].
+    Generalises publish_preview across projects (per-version isolated). dryrun (or env
+    STUDIO_DEPLOY_DRYRUN) synthesises the URL without calling wrangler — for plumbing tests."""
+    cdir = CLIENTS / slug
+    dist = cdir / version_site_dirname(idx) / "dist"
+    project = version_project(slug, idx)
+    base = f"https://{project}.pages.dev"
+    if not dist.is_dir():
+        _record_version_publish(cdir, idx, None, "no dist (build missing)")
+        return None
+    if dryrun is None:
+        dryrun = os.environ.get("STUDIO_DEPLOY_DRYRUN", "").lower() in ("1", "true", "yes")
+    if dryrun:
+        _record_version_publish(cdir, idx, base, "(dry-run, no wrangler)")
+        return base
+    try:
+        proc = subprocess.run(["wrangler", "pages", "deploy", str(dist),
+                               "--project-name", project, "--commit-dirty=true"],
+                              cwd=str(ROOT), capture_output=True, text=True, timeout=600)
+        out = (proc.stdout or "") + (proc.stderr or "")
+        url = next((m.group(0) for m in re.finditer(r"https://[^\s]+\.pages\.dev", out)), None)
+        ok = proc.returncode == 0 and bool(url)
+        _record_version_publish(cdir, idx, base if ok else None, url or out.strip()[-200:])
+        return base if ok else None
+    except Exception as e:
+        _record_version_publish(cdir, idx, None, f"errored: {e}")
+        return None
+def _record_version_publish(cdir, idx, base_url, detail):
+    st = read_status(cdir)
+    vers = st.setdefault("versions", [])
+    ent = next((v for v in vers if v.get("idx") == idx), None)
+    if not ent:
+        ent = {"idx": idx}; vers.append(ent)
+    ent["project"] = version_project(cdir.name, idx); ent["site_dir"] = version_site_dirname(idx)
+    if base_url:
+        ent.update(preview_url=base_url, published_at=now(), status="published"); ent.pop("stale", None)
+        if idx == 0:  # keep the legacy single-version fields in sync for the base build
+            st.update(preview_url=base_url, preview_published_at=now())
+            st.pop("preview_stale", None); st.pop("publish_blocked", None)
+        st.setdefault("log", []).append(f"{now()} PUBLISHED v{idx+1} ({ent.get('mode','')}) -> {base_url} {detail}")
+    else:
+        ent.update(status="publish-failed", stale=True)
+        if idx == 0: st["preview_stale"] = True
+        st.setdefault("log", []).append(f"{now()} PUBLISH FAILED v{idx+1}: {detail}")
+    write_status(cdir, st)
+def version_build_runbook(slug, idx, mode):
+    sd = version_site_dirname(idx)
+    expr = {
+        "standard": "STANDARD design mode — clean, conversion-proven; pass the full Design QA Gate and name the brand moment.",
+        "image-led": ("IMAGE-LED design mode (ECOMMERCE-GUIDELINES §5.4): LEAD with photography on every "
+                      "surface whose image MEETS its slot minimum, at native resolution and NEVER upscaled; a "
+                      "below-minimum or absent photo uses the FIRST-CLASS type-led fallback (refined typographic "
+                      "composition on a muted, ALIVE tonal field — never a bare card, never a stretched photo). "
+                      "Restrained muted palette."),
+        "creative": creative_clause("claude"),
+    }[mode]
+    base = ("Use the existing 03-site as the project base." if idx == 0 else
+            f"If {sd}/ does not exist, COPY the base project into it first (cp -R 03-site {sd}), then customise the copy.")
+    return (f"BUILD VERSION v{idx+1} ({mode}) for {slug} into {sd}/ (do NOT touch any other 03-site-* dir). "
+            f"{base} {expr} This version is a COMPLETE, honest site: carry the FULL parity floor and EVERY "
+            f"source image (re-import the image records) — identical facts/features to every other version, only "
+            f"the design EXPRESSION differs. Run the verification loop against {sd}/dist (parity-checklist.md "
+            f"INCLUDING the 'every source image present in build' row) — FAIL and iterate, never ship incomplete. "
+            f"Build with: npm run build --prefix {sd}. Do NOT deploy — studio.py owns the per-version deploy. "
+            f"On any human-judgment fork, open a decision and STOP.")
+def _claude_p_build(slug, command, kind):
+    """One headless `claude -p` build, NO auto-publish (the multi-version driver owns per-version
+    deploy). Mirrors run_advance's tail bookkeeping. Returns the exit code."""
+    cdir = CLIENTS / slug
+    bump(cdir, msg=f"{kind} started")
+    try:
+        proc = subprocess.Popen([CLAUDE_BIN, "-p", command], cwd=str(ROOT),
+                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    except Exception as e:
+        bump(cdir, msg=f"{kind} FAILED to start: {e}"); return 1
+    with TASK_LOCK:
+        TASKS[slug] = {"kind": kind, "label": command[:80], "started": now(), "tail": [], "proc": proc}
+    tail = TASKS[slug]["tail"]
+    for line in proc.stdout:
+        line = line.rstrip()
+        if line: tail.append(line); del tail[:-60]
+    rc = proc.wait()
+    bump(cdir, msg=f"{kind} finished (exit {rc})")
+    return rc
+def run_version_builds(slug, modes):
+    """Driver thread: build each selected version SEQUENTIALLY (one Claude task per client at a time)
+    into its own dir, then deploy it to its own project. Each is independent + isolated."""
+    cdir = CLIENTS / slug
+    st = read_status(cdir)
+    st["multi_version"] = len(modes) > 1
+    st["versions"] = [{"idx": i, "mode": m, "label": m, "project": version_project(slug, i),
+                       "site_dir": version_site_dirname(i), "status": "queued",
+                       "preview_url": "", "published_at": ""} for i, m in enumerate(modes)]
+    write_status(cdir, st)
+    bump(cdir, msg=f"multi-version build queued: {', '.join(modes)} ({len(modes)} version(s))")
+    for idx, mode in enumerate(modes):
+        _set_version_status(cdir, idx, "building")
+        rc = _claude_p_build(slug, version_build_runbook(slug, idx, mode), f"v{idx+1} build ({mode})")
+        if rc == 0:
+            url = publish_version(slug, idx)
+            bump(cdir, msg=(f"v{idx+1} ({mode}) published -> {url}" if url else f"v{idx+1} ({mode}) publish FAILED"))
+        else:
+            _set_version_status(cdir, idx, "build-failed")
+            bump(cdir, msg=f"v{idx+1} ({mode}) BUILD FAILED (exit {rc})")
+    with TASK_LOCK: TASKS.pop(slug, None)
+
 def run_advance(slug, command, kind="advance", fail_flag="advance_failed"):
     """Run `claude -p <command>` from ROOT in the background (used by Advance + backend proposal).
     Start/finish lines go to status.json only when the claude subprocess is NOT running (avoids
@@ -963,6 +1118,8 @@ def list_clients():
                     "incidents_open": open_incident_count(d.name),
                     "reports": list_reports(d.name),
                     "design_mode": read_status(d).get("design_mode", "standard"),
+                    "versions": st.get("versions", []),
+                    "version_advisories": version_advisories(d.name),
                     "documents": [n for n in ("redesign-plan.md", "deliverables-request.md",
                                               "production-roadmap.md", "backend-config.yaml")
                                   if (d / "02-intake" / n).exists()],
@@ -1125,6 +1282,18 @@ button.adv.fb[disabled]{color:var(--muted);border-color:var(--line);opacity:.6}
 .editrow{display:flex;gap:.4rem;align-items:flex-start;margin-top:.4rem}
 .editrow textarea{flex:1;min-height:2.2rem;font-size:.75rem}
 .okmsg{color:#7bd88f;font-size:.72rem;margin-left:.4rem}
+.vpanel{margin-top:.6rem;padding:.6rem .7rem;border:1px dashed #555;border-radius:8px;background:rgba(255,255,255,.02)}
+.vphead{font-size:.72rem;color:var(--dim,#9aa);margin-bottom:.4rem}
+.vmode{display:flex;align-items:center;gap:.45rem;font-size:.8rem;padding:.15rem 0}
+.vmname{min-width:5.5rem;font-weight:600;text-transform:capitalize}
+.vadv{font-size:.68rem;color:var(--dim,#8a9a8a)}
+.vadv.rec{color:#7bd88f}.vadv.caution{color:#ffb000}.vadv.ok{color:#9ab}.vadv.neutral{color:#888}
+.vbuildbtn{margin-top:.5rem;padding:.35rem .8rem;border-radius:6px;border:1px solid #7a4dff;background:#2a2350;color:#fff;font-size:.78rem;cursor:pointer}
+.vbuildbtn:disabled{opacity:.5;cursor:default}
+.vlink{display:inline-flex;align-items:center;gap:.25rem;margin-right:.3rem}
+.vlink.chosen .pvw{color:#7bd88f;font-weight:700}
+.chosenbadge{color:#7bd88f;font-size:.66rem}
+.vtiny{font-size:.62rem;padding:.05rem .35rem;border:1px solid #555;border-radius:4px;background:transparent;color:#aab;cursor:pointer}
 </style></head><body><div class="wrap">
 <div id="stalebanner" class="stalebanner" style="display:none"></div>
 <h1>Web Studio <span id="vstamp" class="vstamp" title="running dashboard code version"></span></h1><p class="sub">Two human steps · everything else automated</p>
@@ -1214,6 +1383,24 @@ const chatOpen = new Set();      // chat keys currently expanded
 const chatDraft = {};            // key -> unsent textarea text (preserved across refreshes)
 function esc(s){ return (s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
 function findC(slug){ return DATA.clients.find(x=>x.slug===slug); }
+function vtime(s){ return s? s.replace('Z','').slice(5):''; }
+function versionLinks(c){
+  const vs=c.versions||[];
+  if(vs.length>1){
+    const items=vs.map(v=>{
+      const label=v.label+(v.idx?(' (v'+(v.idx+1)+')'):'');
+      if(v.preview_url) return `<span class="vlink${v.chosen?' chosen':''}"><a class="pvw" href="${v.preview_url}" target="_blank" rel="noopener">${esc(label)} ↗</a>`
+        +` <span class="copy" title="Copy URL" onclick="cp('${v.preview_url}')">⧉</span>`
+        +` <span class="pdate">${vtime(v.published_at)}</span>`
+        +(v.chosen?' <span class="chosenbadge">★ chosen</span>':` <button class="vtiny" onclick="promoteVersion('${c.slug}',${v.idx})">promote</button>`)
+        +(v.idx?` <button class="vtiny" onclick="archiveVersion('${c.slug}',${v.idx})">archive</button>`:'')+`</span>`;
+      return `<span class="vlink"><span class="vmname">${esc(label)}</span> <span class="stale">${esc(v.status||'building…')}</span></span>`;
+    }).join(' · ');
+    return `<div class="prev"><span class="mono-label">Preview:</span> ${items}</div>`;
+  }
+  if(c.preview_url) return `<div class="prev"><a class="pvw" href="${c.preview_url}" target="_blank" rel="noopener">Preview ↗</a> <span class="copy" title="Copy URL" onclick="cp('${c.preview_url}')">⧉</span> <span class="pdate">${c.preview_rel||c.preview_at}</span>${c.preview_stale?' <span class="stale">⚠ last deploy failed</span>':(c.preview_behind?' <span class="stale">⚠ preview behind latest edits</span>':'')}</div>`;
+  return '';
+}
 async function openSession(key){ await api('/open',{slug:key==='studio'?'':key, studio:key==='studio'}); }
 function saveDrafts(){ chatOpen.forEach(k=>{ const t=document.getElementById('cin-'+k); if(t) chatDraft[k]=t.value; }); }
 // Preserve transient row UI state across the 4s full re-render (general — every client row):
@@ -1370,7 +1557,7 @@ async function load(){
     ${c.full_build&&c.full_build.steps&&c.full_build.steps.length?`<div class="fbsteps"><div class="fbhead">⚡ Full build · ${c.full_build.variant} · ${c.full_build.resumable?'in progress (resumable)':'complete'}</div>${c.full_build.steps.map(s=>`<div class="fbstep ${s.status}"><span class="fbg">${s.status==='done'?'✓':s.status==='active'?'●':s.status==='blocked'?'⚠':'○'}</span> <span class="fbt">${esc(s.title)}</span>${s.note?` <span class="fbn">— ${esc(s.note)}</span>`:''}</div>`).join('')}</div>`:''}
     ${c.advance_failed&&!c.busy?`<div class="prev"><span class="stale">⚠ advance failed — see log</span></div>`:''}
     ${c.production_url?`<div class="prev"><a class="live" href="${c.production_url}" target="_blank" rel="noopener">Live ↗</a> <span class="copy" title="Copy URL" onclick="cp('${c.production_url}')">⧉</span> <span class="purl">${c.production_url}</span></div>`:''}
-    ${c.preview_url?`<div class="prev"><a class="pvw" href="${c.preview_url}" target="_blank" rel="noopener">Preview ↗</a> <span class="copy" title="Copy URL" onclick="cp('${c.preview_url}')">⧉</span> <span class="pdate">${c.preview_rel||c.preview_at}</span>${c.preview_stale?' <span class="stale">⚠ last deploy failed</span>':(c.preview_behind?' <span class="stale">⚠ preview behind latest edits</span>':'')}</div>`:''}
+    ${versionLinks(c)}
     ${c.documents&&c.documents.length?`<div class="docs"><span class="mono-label">documents</span> ${c.documents.map(n=>`<button class="docbtn" onclick="openDoc('${c.slug}','${n}')">${n}</button>`).join(' ')}</div>`:''}
     ${c.concepts&&c.concepts.length?`<div class="docs"><span class="mono-label">concept boards</span> ${c.concepts.map(b=>`<a class="docbtn" href="${b.url||'#'}" target="_blank" rel="noopener" title="${esc(b.one_liner)}">${b.recommended?'★ ':''}${esc(b.name)} ↗</a><a class="docbtn" href="/api/concept-thumb?slug=${c.slug}&name=${esc(b.thumb_desktop)}" target="_blank" rel="noopener" title="desktop screenshot">🖼 png</a>`).join(' ')}</div>`:''}
     ${c.reports&&c.reports.length?`<div class="docs"><span class="mono-label">reports${newDot(c.slug,c.reports)}</span> ${c.reports.slice(0,8).map(r=>`<button class="docbtn" onclick="openReport('${c.slug}','${r.file}','${c.reports[0].file}')" title="${esc(r.summary)}">${esc(r.kind)} · ${r.ts}</button>`).join(' ')}</div>`:''}
@@ -1422,6 +1609,11 @@ function renderNeeds(decs, incs){
             ? `<button class="pushbtn" ${dn.busy?'disabled':''} onclick="pushFurther('${dn.scope}')" title="Generate an experimental Board ${'ABCDE'[dn.board_count]||'D'} beyond the bold board — generative, no confirm">🔥 Push further</button><span class="pushnote">not landing? generate an experimental board (${dn.board_count}/5)</span>`
             : `<span class="pushnote">Two escalations reached (Board E exists) — the fix is a conversation now, not another board.</span>`
         }<button class="ovbtn" ${dn.busy?'disabled':''} onclick="openOverhaul('${dn.scope}')" title="From-scratch maximal reimagining — bypasses the A/B/C boards entirely. Full creative craft (graphic richness + smooth interactivity); parity + facts + Hard rules preserved.">🎨 Creative / Wow build</button>${dn.busy?'<span class="run">● generating…</span>':''}</div>` : '';
+      const adv = (findC(dn.scope)||{}).version_advisories || {};
+      const vmode = m=>{ const a=adv[m]||{}; return `<label class="vmode"><input type="checkbox" value="${m}"${m==='standard'?' checked':''}> <span class="vmname">${m}</span><span class="vadv ${a.tone||''}">${esc(a.text||'')}</span></label>`; };
+      const versionPanel = isBoards ? `<div class="vpanel"><div class="vphead">Build one OR MORE versions — each deploys to its own preview URL (first ⇒ ws-${dn.scope}, extras ⇒ ws-${dn.scope}-v2, -v3…)</div>
+          ${['standard','image-led','creative'].map(vmode).join('')}
+          <button class="vbuildbtn" ${dn.busy?'disabled':''} onclick="buildVersions('${dn.scope}', this)">Build selected version(s) ▶</button></div>` : '';
       const opts = isBoards
         ? `<div class="decboards">${dn.options.map(o=>`
             <div class="bcard ${o.id===dn.recommendation?'rec':''} ${o.tag==='experimental'?'exp':''}">
@@ -1432,7 +1624,7 @@ function renderNeeds(decs, incs){
               <div class="bone">${esc(o.consequence)}</div>
               <div class="brow"><a class="blink" href="${o.board_url||'#'}" target="_blank" rel="noopener">Open board ↗</a>
                 <button class="bchoose" onclick="resolveDec('${dn.scope}','${dn.file}','${o.id}')">Choose this</button></div>
-            </div>`).join('')}</div>${pushRow}`
+            </div>`).join('')}</div>${pushRow}${versionPanel}`
         : `<div class="decopts">${dn.options.map(o=>`<button class="${o.id===dn.recommendation?'decrec':'decopt'}" onclick="resolveDec('${dn.scope}','${dn.file}','${o.id}')" title="${esc(o.consequence)}">${o.id===dn.recommendation?'★ ':''}${esc(o.label||o.id)}</button>`).join('')}</div>`;
       return `<div class="deccard">
       <div class="decq">${esc(dn.question)} <span class="decscope">${dn.scope==='__studio__'?'studio':esc(dn.scope)}</span></div>
@@ -1461,6 +1653,23 @@ async function pushFurther(scope){
   const r=await api('/api/push-further',{slug:scope});
   if(r.error){ alert('Push further: '+r.error); }
   else { alert('Generating an experimental board — watch the row log; the new option joins this card when it lands.'); load(); }
+}
+async function buildVersions(scope, btn){
+  const panel=btn.closest('.vpanel');
+  const modes=[...panel.querySelectorAll('input[type=checkbox]:checked')].map(c=>c.value);
+  if(!modes.length){ alert('Select at least one design mode'); return; }
+  const r=await api('/api/build-versions',{slug:scope,modes});
+  if(r.error){ alert('Build versions: '+r.error); }
+  else { alert('Building '+modes.length+' version(s): '+r.projects.join(' · ')+'.\\nEach URL appears on the row as it deploys. Versions build one at a time.'); load(); }
+}
+async function promoteVersion(scope, idx){
+  const r=await api('/api/promote-version',{slug:scope,idx});
+  if(r.error){ alert('Promote: '+r.error); } else load();
+}
+async function archiveVersion(scope, idx){
+  if(!confirm('Archive version v'+(idx+1)+'? Its site dir moves to archive/ (never deleted); the preview project stays live.')) return;
+  const r=await api('/api/archive-version',{slug:scope,idx});
+  if(r.error){ alert('Archive: '+r.error); } else load();
 }
 let OV_SCOPE='';
 function openOverhaul(scope){ OV_SCOPE=scope;
@@ -1711,6 +1920,67 @@ class H(BaseHTTPRequestHandler):
                              args=(slug, full_build_runbook(slug, variant), "full build", "full_build_failed"),
                              daemon=True).start()
             return self._send(json.dumps({"ok": True, "variant": variant}), "application/json")
+        elif path == "/api/build-versions":
+            # Boards-step MULTI-SELECT: build one OR MORE design modes, each to its own preview URL.
+            slug = slugify(d.get("slug", "")); cdir = CLIENTS / slug
+            if not cdir.exists():
+                return self._send(json.dumps({"error": "no such client"}), "application/json", 404)
+            modes = [m for m in (d.get("modes") or []) if m in BUILD_MODES]
+            if not modes:
+                return self._send(json.dumps({"error": "select at least one design mode"}), "application/json", 400)
+            with TASK_LOCK:
+                if slug in TASKS:
+                    return self._send(json.dumps({"error": "a Claude task is already running for this client"}), "application/json", 409)
+                TASKS[slug] = {"kind": "multi-version build", "label": f"build {len(modes)} version(s)", "started": now(), "tail": [], "proc": None}
+            set_design_mode(cdir, modes[0])   # base build's mode drives the existing design badge
+            # building versions chooses the design direction → close any open concept-board decision
+            dd = decisions_dir(slug)
+            if dd.exists():
+                for f in dd.glob("*-OPEN-*.yaml"):
+                    if any(o.get("thumb") for o in parse_decision(f)["options"]):
+                        (dd / f.name.replace("-OPEN-", "-RESOLVED-")).write_text(
+                            f.read_text().rstrip() + f'\nchosen: build-versions({",".join(modes)})\nchosen_at: "{now()}"\n')
+                        f.unlink()
+            bump(cdir, msg=f"BUILD VERSIONS: {', '.join(modes)}")
+            threading.Thread(target=run_version_builds, args=(slug, modes), daemon=True).start()
+            return self._send(json.dumps({"ok": True, "modes": modes,
+                "projects": [version_project(slug, i) for i in range(len(modes))]}), "application/json")
+        elif path == "/api/promote-version":
+            # Mark version <idx> the chosen direction (records chosen_version; never deletes others).
+            slug = slugify(d.get("slug", "")); cdir = CLIENTS / slug
+            if not cdir.exists():
+                return self._send(json.dumps({"error": "no such client"}), "application/json", 404)
+            try: idx = int(d.get("idx"))
+            except Exception: return self._send(json.dumps({"error": "bad idx"}), "application/json", 400)
+            st = read_status(cdir)
+            ent = next((v for v in st.get("versions", []) if v.get("idx") == idx), None)
+            if not ent: return self._send(json.dumps({"error": "no such version"}), "application/json", 404)
+            st["chosen_version"] = idx
+            for v in st["versions"]: v["chosen"] = (v.get("idx") == idx)
+            st.setdefault("log", []).append(f"{now()} PROMOTED v{idx+1} ({ent.get('mode','')}) as the chosen direction")
+            write_status(cdir, st)
+            return self._send(json.dumps({"ok": True, "chosen": idx}), "application/json")
+        elif path == "/api/archive-version":
+            # Archive (never delete) a non-primary version: move its site dir aside, drop the row entry.
+            slug = slugify(d.get("slug", "")); cdir = CLIENTS / slug
+            if not cdir.exists():
+                return self._send(json.dumps({"error": "no such client"}), "application/json", 404)
+            try: idx = int(d.get("idx"))
+            except Exception: return self._send(json.dumps({"error": "bad idx"}), "application/json", 400)
+            if idx == 0:
+                return self._send(json.dumps({"error": "the primary version (ws-<slug>) cannot be archived; promote another first"}), "application/json", 400)
+            st = read_status(cdir)
+            ent = next((v for v in st.get("versions", []) if v.get("idx") == idx), None)
+            if not ent: return self._send(json.dumps({"error": "no such version"}), "application/json", 404)
+            sd = cdir / version_site_dirname(idx)
+            if sd.exists():
+                ARCHIVE.mkdir(exist_ok=True)
+                dest = ARCHIVE / f"{slug}-v{idx+1}-{now().replace(':','').replace(' ','-').replace('Z','')}"
+                shutil.move(str(sd), str(dest))
+            st["versions"] = [v for v in st.get("versions", []) if v.get("idx") != idx]
+            st.setdefault("log", []).append(f"{now()} ARCHIVED v{idx+1} ({ent.get('mode','')}) — site dir moved to archive/ (preview project left intact)")
+            write_status(cdir, st)
+            return self._send(json.dumps({"ok": True, "archived": idx}), "application/json")
         elif path == "/api/overhaul":
             # THE single Creative/Wow entry point (boards step). One clean path: creative ALWAYS
             # injects creative_clause via overhaul_runbook — never a silent downgrade to standard.
