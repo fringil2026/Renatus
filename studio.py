@@ -15,7 +15,7 @@ Lifecycle: new client -> scrape (concurrent, queued past the limit) -> Claude Co
 assembles/finishes -> ARCHIVE button moves clients/<slug>/ to
 archive/<slug>-<timestamp>/ (a fresh folder per finished project) and clears the row.
 """
-import json, os, re, secrets, shutil, subprocess, sys, threading, time
+import hashlib, json, os, re, secrets, shutil, socket, subprocess, sys, threading, time
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -73,6 +73,38 @@ NEXT = {
 # ---------------- helpers ----------------
 def now(): return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%SZ")
 def slugify(s): return re.sub(r"-+", "-", re.sub(r"[^a-z0-9]+", "-", s.lower())).strip("-") or "client"
+
+# ---------------- version stamp + stale-code self-check (Layer 2) ----------------
+# The recurring "dashboard is serving stale code" class of bug: a parallel/older studio.py
+# keeps the port while newer code sits on disk. We make staleness a glance, not an audit —
+# stamp the running version in the footer, and fire a banner the moment studio.py on disk
+# differs from the file this process loaded at launch.
+def _git(*args, default=""):
+    try:
+        r = subprocess.run(["git", "-C", str(ROOT), *args], capture_output=True, text=True, timeout=5)
+        return r.stdout.strip() if r.returncode == 0 else default
+    except Exception:
+        return default
+def _studio_py_sig():
+    """Content fingerprint of the studio.py ON DISK — the precise 'is the served code current?'
+    signal. Detects committed AND uncommitted edits, unlike a bare HEAD compare (HEAD can move
+    on an unrelated file without studio.py changing)."""
+    try:
+        return hashlib.sha1((ROOT / "studio.py").read_bytes()).hexdigest()[:12]
+    except Exception:
+        return ""
+LAUNCH_HEAD = _git("rev-parse", "--short", "HEAD", default="unknown")
+LAUNCH_PY_SIG = _studio_py_sig()
+LAUNCH_PY_COMMIT_TIME = _git("log", "-1", "--format=%cd", "--date=format:%Y-%m-%d %H:%M", "--", "studio.py")
+def version_info():
+    cur_sig = _studio_py_sig()
+    return {
+        "launch_head": LAUNCH_HEAD,
+        "head": _git("rev-parse", "--short", "HEAD", default="unknown"),
+        "py_commit_time": LAUNCH_PY_COMMIT_TIME,
+        # stale = the studio.py file on disk changed since this process loaded it ⇒ restart needed.
+        "stale": bool(LAUNCH_PY_SIG and cur_sig and cur_sig != LAUNCH_PY_SIG),
+    }
 
 def parse_ts(s):
     try: return datetime.strptime(s, "%Y-%m-%d %H:%M:%SZ").replace(tzinfo=timezone.utc)
@@ -827,6 +859,54 @@ def create_incident(scope, symptom):
                 threading.Thread(target=run_advance, args=(scope, cmd, "incident diagnostic", None), daemon=True).start()
     return True, f.name
 
+EDIT_TMPL = ROOT / "templates" / "edit-template.md"
+def _next_edit_n(ed):
+    """Highest existing NNN + 1 (DONE/BLOCKED files persist, so count-based numbering would
+    collide). Mirrors CLAUDE.md 'highest NNN wins'."""
+    nums = [int(m.group(1)) for f in ed.glob("*.md")
+            if (m := re.match(r"(\d+)-", f.name))]
+    return (max(nums) + 1) if nums else 1
+def create_edit(slug, body_text, mode):
+    """Create a VALID, auto-numbered NNN-PENDING-<short>.md edit so 'Process edits' always picks
+    it up. mode 'typed' wraps free text into the edit template's Requested-change section; mode
+    'upload' takes a pre-written .md (normalised to PENDING) or wraps it if it isn't already a
+    structured edit. Both modes converge on identical, valid PENDING edits. Returns (ok, name|err)."""
+    cdir = CLIENTS / slug
+    if not cdir.exists():
+        return False, "no such client"
+    body_text = (body_text or "").strip()
+    if not body_text:
+        return False, "empty edit"
+    ed = cdir / "02-intake" / "edits"; ed.mkdir(parents=True, exist_ok=True)
+    n = _next_edit_n(ed)
+    first = next((ln.strip("# ").strip() for ln in body_text.splitlines() if ln.strip()), "edit")
+    structured = body_text.startswith("---") and "status:" in body_text[:400].lower()
+    if structured:  # name a pre-authored edit from its scope: line, not the "---" first line
+        m = re.search(r"(?im)^scope:\s*(.+)$", body_text)
+        if m and m.group(1).strip():
+            first = m.group(1).strip()
+    short = re.sub(r"[^a-z0-9]+", "-", first.lower()).strip("-")[:32] or "edit"
+    if mode == "upload" and structured:
+        body = re.sub(r"(?im)^status:.*$", "status: PENDING", body_text, count=1)
+        body = (body.replace("<CLIENT>", slug.upper()).replace("<slug>", slug)
+                    .replace("<NNN>", f"{n:03d}").replace("<YYYY-MM-DD>", now()[:10]))
+    else:
+        tmpl = EDIT_TMPL.read_text() if EDIT_TMPL.exists() else (
+            "---\nedit-id: WS-EDIT-<CLIENT>-<NNN>\nclient: <slug>\nrequested: <YYYY-MM-DD>\n"
+            "status: PENDING\nscope: <one-line summary of the change>\n---\n\n## Requested change\n<>\n\n"
+            "## Acceptance criteria\n-\n\n## Notes\n\n## Resolution\n")
+        body = (tmpl.replace("<CLIENT>", slug.upper()).replace("<slug>", slug)
+                    .replace("<NNN>", f"{n:03d}").replace("<YYYY-MM-DD>", now()[:10])
+                    .replace("<one-line summary of the change>", first[:80]))
+        # replace the Requested-change placeholder body with the free text (keep everything else)
+        body = re.sub(r"(## Requested change\n).*?(\n## )",
+                      lambda m: m.group(1) + body_text + "\n" + m.group(2),
+                      body, count=1, flags=re.S)
+    f = ed / f"{n:03d}-PENDING-{short}.md"
+    f.write_text(body)
+    bump(cdir, msg=f"edit {n:03d} created ({mode}) via dashboard: {f.name}")
+    return True, f.name
+
 # ---------------- reports (every finding becomes a visible artifact) ----------------
 def reports_dir(scope):
     return (ROOT / ".claude" / "reports") if scope == STUDIO_KEY else (CLIENTS / scope / "02-intake" / "reports")
@@ -1038,8 +1118,16 @@ button.adv.fb[disabled]{color:var(--muted);border-color:var(--line);opacity:.6}
 .ovnotice{font-size:.7rem;color:var(--muted);margin:.45rem 0 .2rem;border-left:2px solid #7a4dff;padding-left:.5rem}
 .ovhint{font-size:.72rem;color:#e6a44a;margin:.2rem 0 .5rem}
 .pushnote{font-family:var(--m);font-size:.64rem;color:var(--muted)}
+.stalebanner{background:#7a1212;color:#fff;border:1px solid #ff5c5c;border-radius:8px;padding:.7rem 1rem;margin:0 0 1rem;font-weight:600;font-size:.85rem}
+.stalebanner code{background:rgba(255,255,255,.16);padding:.05rem .3rem;border-radius:3px}
+.vstamp{font-size:.62rem;font-family:var(--m,monospace);font-weight:400;color:var(--dim,#8a9a8a);vertical-align:middle;margin-left:.5rem}
+.vstamp.stale{color:#ff5c5c;font-weight:600}
+.editrow{display:flex;gap:.4rem;align-items:flex-start;margin-top:.4rem}
+.editrow textarea{flex:1;min-height:2.2rem;font-size:.75rem}
+.okmsg{color:#7bd88f;font-size:.72rem;margin-left:.4rem}
 </style></head><body><div class="wrap">
-<h1>Web Studio</h1><p class="sub">Two human steps · everything else automated</p>
+<div id="stalebanner" class="stalebanner" style="display:none"></div>
+<h1>Web Studio <span id="vstamp" class="vstamp" title="running dashboard code version"></span></h1><p class="sub">Two human steps · everything else automated</p>
 <form class="shreport" onsubmit="return reportProblem(event,'__studio__')" title="Studio-level problem (dashboard, pipeline, a script)">
   <input type="text" placeholder="Report a studio problem — dashboard/pipeline/script (becomes a .claude/incidents/ incident)" required>
   <button class="ghost">Report ⚑</button>
@@ -1238,12 +1326,25 @@ function openFullBuild(slug){
   };
   document.getElementById('modal').style.display='flex'; inp.focus();
 }
+function renderVersion(v){
+  const stamp=document.getElementById('vstamp'), banner=document.getElementById('stalebanner');
+  if(stamp){ stamp.textContent='commit '+(v.head||v.launch_head||'?')+(v.py_commit_time?(' · '+v.py_commit_time):'');
+    stamp.classList.toggle('stale', !!v.stale); }
+  if(banner){
+    if(v.stale){ banner.style.display='block';
+      banner.innerHTML='⚠ Dashboard is running STALE code — studio.py changed on disk since launch '+
+        '(launched <code>'+(v.launch_head||'?')+'</code>, HEAD is <code>'+(v.head||'?')+'</code>). '+
+        'Restart to load latest: <code>./restart.sh</code>'; }
+    else banner.style.display='none';
+  }
+}
 async function load(){
   saveDrafts();
   const d = await api('/api/clients'); DATA = d;
   document.getElementById('stats').textContent =
     `active scrapes ${d.running}/${d.max} · queued ${d.queued} · archived projects ${d.archived}`;
   renderNeeds(d.decisions||[], d.incidents||[]);
+  renderVersion(d.version||{});
   const sr=document.getElementById('studioreports');
   if(sr) sr.innerHTML=(d.studio_reports&&d.studio_reports.length)?`<span class="mono-label">studio reports${newDot('__studio__',d.studio_reports)}</span> `+d.studio_reports.slice(0,8).map(r=>`<button class="docbtn" onclick="openReport('__studio__','${r.file}','${d.studio_reports[0].file}')" title="${esc(r.summary)}">${esc(r.kind)} · ${r.ts}</button>`).join(' '):'';
   const el = document.getElementById('list');
@@ -1283,6 +1384,10 @@ async function load(){
       <label><input type="radio" name="dest-${c.slug}" value="edits"> edits</label>
       <button class="ghost">Upload .md</button>
       <button type="button" class="ghost" onclick="toggleChat('${c.slug}')">Chat ▾</button>
+    </form>
+    <form class="editrow" onsubmit="return addEdit(event,'${c.slug}')">
+      <textarea data-keep="edit-${c.slug}" placeholder="Type an edit request — becomes a numbered PENDING edit (Process edits picks it up)…" required></textarea>
+      <button class="ghost">Add edit ✎</button>
     </form>
     <div id="chat-${c.slug}" class="chatpanel" style="display:none">
       <div class="chatlog" id="chatlog-${c.slug}"></div>
@@ -1420,8 +1525,20 @@ async function up(e,slug){ e.preventDefault();
   const dest=f.querySelector('input[name="dest-'+slug+'"]:checked').value;
   const content=await file.text();
   const r=await api('/api/upload',{slug,dest,filename:file.name,content});
-  if(r.error) alert('Upload failed: '+r.error); else { f.reset(); load(); }
+  if(r.error){ alert('Upload failed: '+r.error); }
+  else { f.reset(); flash(f, dest==='edits' ? ('✓ created '+r.created) : ('✓ uploaded '+(r.path||''))); setTimeout(load,1200); }
   return false; }
+async function addEdit(e,slug){ e.preventDefault();
+  const f=e.target, t=f.querySelector('textarea'); const text=(t.value||'').trim();
+  if(!text){ flash(f,'type something first'); return false; }
+  const r=await api('/api/add-edit',{slug,text});
+  if(r.error){ alert('Add edit failed: '+r.error); }
+  else { t.value=''; flash(f, '✓ created '+r.created); setTimeout(load,1200); }
+  return false; }
+function flash(form, msg){
+  let s=form.querySelector('.okmsg'); if(!s){ s=document.createElement('span'); s.className='okmsg'; form.appendChild(s); }
+  s.textContent=msg; setTimeout(()=>{ if(s) s.textContent=''; }, 4000);
+}
 load(); setInterval(load, 4000);
 </script></body></html>"""
 
@@ -1461,6 +1578,7 @@ class H(BaseHTTPRequestHandler):
                                    "archived": archived, "server": IS_SERVER,
                                    "ttyd_url": TTYD_URL, "decisions": list_open_decisions(),
                                    "incidents": list_open_incidents(),
+                                   "version": version_info(),
                                    "studio_reports": list_reports(STUDIO_KEY)}), "application/json")
         elif path == "/api/chat":
             q = parse_qs(urlparse(self.path).query)
@@ -1534,11 +1652,25 @@ class H(BaseHTTPRequestHandler):
                 return self._send(json.dumps({"error": "dest must be specs or edits"}), "application/json", 400)
             if not fname.lower().endswith(".md") or fname.startswith("."):
                 return self._send(json.dumps({"error": "only .md files allowed"}), "application/json", 400)
+            if dest == "edits":
+                # edits MUST follow NNN-PENDING-<short>.md or 'Process edits' silently ignores them
+                # (the old bug: raw filename saved verbatim → never processed). Auto-number + normalise.
+                ok, res = create_edit(slug, content, "upload")
+                if not ok:
+                    return self._send(json.dumps({"error": res}), "application/json", 400)
+                return self._send(json.dumps({"ok": True, "created": res,
+                                              "path": f"02-intake/edits/{res}"}), "application/json")
             target = cdir / "02-intake" / dest / fname
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(content)
             bump(cdir, msg=f"uploaded {dest}/{fname} ({len(content)} chars) via dashboard")
             return self._send(json.dumps({"ok": True, "path": f"02-intake/{dest}/{fname}"}), "application/json")
+        elif path == "/api/add-edit":
+            slug = slugify(d.get("slug", ""))
+            ok, res = create_edit(slug, d.get("text", ""), "typed")
+            code = 200 if ok else (404 if res == "no such client" else 400)
+            return self._send(json.dumps({"ok": True, "created": res} if ok else {"error": res}),
+                              "application/json", code)
         elif path == "/api/advance":
             slug = slugify(d.get("slug", ""))
             cdir = CLIENTS / slug
@@ -1744,11 +1876,49 @@ class H(BaseHTTPRequestHandler):
             return self._send("not found", code=404)
         self._send("{}", "application/json")
 
+def _port_owner_pid():
+    try:
+        r = subprocess.run(["lsof", "-ti", f"TCP:{PORT}", "-sTCP:LISTEN"],
+                           capture_output=True, text=True, timeout=5)
+        pids = [p for p in r.stdout.split() if p.strip()]
+        return pids[0] if pids else ""
+    except Exception:
+        return ""
+def _port_in_use():
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM); s.settimeout(0.4)
+    try: return s.connect_ex(("127.0.0.1", PORT)) == 0
+    finally: s.close()
+def single_instance_guard():
+    """Refuse to start a SECOND studio.py on the port (the parallel-session problem that left a
+    stale server fighting a new one). Default: exit with the existing PID named. With
+    STUDIO_TAKEOVER=1 (or --takeover): kill the incumbent and take the port."""
+    if not _port_in_use():
+        return
+    pid = _port_owner_pid()
+    takeover = os.environ.get("STUDIO_TAKEOVER", "").lower() in ("1", "true", "yes") or "--takeover" in sys.argv
+    if not takeover:
+        print(f"[studio] REFUSING TO START — another studio.py already owns :{PORT}"
+              + (f" (PID {pid})" if pid else "") + ".\n"
+              f"         Restart cleanly:  ./restart.sh   (or run with STUDIO_TAKEOVER=1)", file=sys.stderr)
+        sys.exit(1)
+    if pid:
+        print(f"[studio] takeover: stopping existing instance PID {pid} on :{PORT}", file=sys.stderr)
+        try: os.kill(int(pid), 15)
+        except Exception: pass
+        for _ in range(20):
+            if not _port_in_use(): break
+            time.sleep(0.25)
+        if _port_in_use():
+            print(f"[studio] takeover failed — :{PORT} still in use; aborting.", file=sys.stderr)
+            sys.exit(1)
+
 if __name__ == "__main__":
+    single_instance_guard()
     CLIENTS.mkdir(exist_ok=True)
     reap_orphans()
     threading.Thread(target=worker, daemon=True).start()
     scope = "PUBLIC (token required)" if HOST not in ("127.0.0.1", "localhost") else "local"
     print(f"Web Studio [{scope}] → http://{HOST}:{PORT}"
           + (f"/?key={TOKEN}" if TOKEN else "") + f"   · {MAX_SCRAPES} concurrent scrapes")
+    print(f"[studio] version: commit {LAUNCH_HEAD} · studio.py last committed {LAUNCH_PY_COMMIT_TIME or '(uncommitted/unknown)'}")
     ThreadingHTTPServer((HOST, PORT), H).serve_forever()

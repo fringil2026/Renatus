@@ -104,6 +104,37 @@ step artifact `02-intake/full-build-progress.json` (`init_full_build`), the live
 **resume** (re-running keeps the artifact; `claude -p` skips `done` steps via the runbook in
 `full_build_runbook`). TEST banners + cutover-refusal are unchanged.
 
+### 3a · Edit creation — TWO reliable paths (both land valid, auto-numbered PENDING edits)
+The dashboard creates client edits two ways, both converging on the `NNN-PENDING-<short>.md`
+convention so **"Process edits" always picks them up** (the old upload bug: the file was saved under
+its raw name → never matched `NNN-PENDING-*` → silently ignored):
+- **Upload a `.md`** (`/api/upload`, dest=`edits`) → routed through `create_edit(slug, content,
+  "upload")`: a pre-authored structured edit is normalised to `status: PENDING`; anything else is
+  wrapped into the edit template. (dest=`specs` still saves the raw filename — specs need no numbering.)
+- **Type into the row textarea** (`/api/add-edit`) → `create_edit(slug, text, "typed")` wraps the
+  free text into the edit template's Requested-change section. The textarea carries `data-keep`, so
+  typed text **survives the 4 s auto-refresh** (snapState/restoreState, per WS-INC-STUDIO-001).
+`create_edit` auto-numbers via `_next_edit_n` (**highest existing NNN + 1**, robust to DONE/BLOCKED
+gaps). Both paths give explicit success feedback (`✓ created NNN-PENDING-…`) — never a silent no-op.
+
+### 3b · Stale-code defenses (kill the "dashboard is serving old code" class of bug)
+The recurring root cause behind missing-buttons / inaccessible-creative-mode / reverting-radio /
+broken-upload symptoms was a parallel or older `studio.py` serving stale code. Four defenses:
+- **Visible version stamp** — at launch the server captures the short HEAD (`LAUNCH_HEAD`), the
+  studio.py last-commit time, and a content fingerprint of the loaded studio.py (`LAUNCH_PY_SIG`).
+  The footer/header renders `commit <hash> · <time>` (`version_info()` → `/api/clients` `version`).
+- **Stale self-check** — every poll compares the on-disk studio.py fingerprint to `LAUNCH_PY_SIG`
+  (NOT a bare HEAD compare — HEAD can move on an unrelated file without studio.py changing, which
+  would false-alarm). If they differ, a **non-dismissable banner** fires: "running STALE code …
+  restart." `version.stale` drives it.
+- **Single-instance guard** — `single_instance_guard()` refuses to start a second studio.py on the
+  port (names the incumbent PID); `STUDIO_TAKEOVER=1` / `--takeover` kills the incumbent and takes
+  the port. No more two-servers-fighting.
+- **One-command restart** — `./restart.sh` kills any instance on the port and relaunches on current
+  code, then prints HEAD to verify against the footer stamp.
+Convention (CLAUDE.md "studio.py change protocol"): a studio.py edit isn't done until the server is
+restarted AND `version.head == HEAD` with `version.stale == false`.
+
 ## 4 · Concept boards (the visual concept decision)
 After the scrape, before any prototype, the human picks from real designs spanning a **creativity
 spectrum**, not documents. `.claude/skills/site-baseline/scripts/concept_boards.py` reads

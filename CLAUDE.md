@@ -346,6 +346,21 @@ a deny rule, and a `cd`-prefixed chain matches none of the allow patterns. There
 - Never reshape a command to evade a deny rule. If a command you genuinely need has no allow
   rule, say so and propose adding the rule — don't work around it.
 
+## studio.py change protocol — binding (kill the stale-server class of bug)
+The dashboard is a long-lived `python3 studio.py` process that loads the file ONCE at launch; a
+parallel/older instance serving stale code is the recurring root cause behind "missing buttons,
+inaccessible creative mode, reverting radios, broken upload." Therefore: **any task that edits
+`studio.py` is NOT done until the server is restarted onto the new code AND the dashboard version
+stamp is verified to equal HEAD.** Concretely:
+1. After editing studio.py, restart with `./restart.sh` (kills any instance on the port, relaunches
+   on current code). Do NOT hand-start a second `python3 studio.py` — the single-instance guard
+   refuses a duplicate (names the incumbent PID; `STUDIO_TAKEOVER=1` to take the port).
+2. VERIFY the footer version stamp / `/api/clients` `version.head` equals `git rev-parse --short HEAD`
+   and `version.stale` is false. A mismatch means a stale server is still serving — restart again.
+3. The dashboard self-reports staleness: a non-dismissable banner fires whenever the on-disk
+   studio.py fingerprint differs from the one the running process loaded. Never report a studio.py
+   change "done" while that banner would show.
+
 ## Decision surfaces — binding
 Any capability that requires the human's JUDGMENT — mode changes, config confirmations, choices
 between alternatives, approvals — MUST ship with a dashboard control in the SAME commit that
