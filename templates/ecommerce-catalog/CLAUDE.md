@@ -117,6 +117,13 @@ keep their own character). The toolkit:
   (exactly one flourish that becomes the site's tell). Motion serves navigation, never decoration.
   This is part of the SAME creative-mode definition as the graphic richness above — full spec:
   ECOMMERCE-GUIDELINES §5.9.
+- **Original generated graphic system (CREATIVE mode)** — code-drawn original SVG botanical line-work +
+  atmospheric tropical motifs (dappled light, leaf-shadow, mist, greenhouse-glass, herbarium borders) +
+  a connective family of dividers/ornaments/draw-in motifs, for a lush collector-greenhouse vibe.
+  **HONESTY BOUNDARY (HARD):** decoration & atmosphere ONLY — never a stand-in for a real product image
+  (real photo or honest type-led fallback only; no invented "orchid" posed as a sellable plant), and all
+  art is ORIGINAL (drawn as code), never traced/copied. Muted, aria-hidden, reduced-motion-safe. Full
+  spec: ECOMMERCE-GUIDELINES §5.9.
 
 **Concept placement (extends the studio ground rules):** each commerce client's named concept must
 state WHERE its brand moment LIVES — the opening, the catalog, or the product page — so the moment

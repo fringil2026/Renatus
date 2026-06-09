@@ -138,7 +138,7 @@ entry point**:
 |---|---|---|---|
 | **STANDARD** | always (default) | clean, purpose-fit; full Design QA Gate + brand moment. Built via **Advance / Full build — standard BY DESIGN, they ignore `design_mode`** | — |
 | **PUSH FURTHER** (🔥) | on the boards card, after A/B/C exist | generates ONE bolder board (D, then E; cap 2) — a board generator, standard effort | — |
-| **CREATIVE / WOW build** (🎨) | **ONE button on the boards decision card** (the boards step) | `design_mode: creative` — **bypasses the A/B/C boards** and builds **from scratch** with full creative craft = **disciplined graphic richness + smooth interactivity** (section scroll narrative, scroll-reveals, hover category tiles, slide-out drawers, condensing sticky header, ONE signature motion moment) | **"Claude develops it"** (Claude reaches on its own) · **"Guide with text"** (paste a direction into `overhaul-brief.md`) — both build from scratch |
+| **CREATIVE / WOW build** (🎨) | **ONE button on the boards decision card** (the boards step) | `design_mode: creative` — **bypasses the A/B/C boards** and builds **from scratch** with full creative craft = **disciplined graphic richness + smooth interactivity + an original generated graphic system** (section scroll narrative, scroll-reveals, hover category tiles, slide-out drawers, condensing sticky header, ONE signature motion moment; code-drawn SVG botanical/tropical motifs for atmosphere — decoration-ONLY honesty boundary: never a stand-in for a real product, all art original) | **"Claude develops it"** (Claude reaches on its own) · **"Guide with text"** (paste a direction into `overhaul-brief.md`) — both build from scratch |
 
 Code (ONE clean path, no silent downgrade): the **Creative / Wow build** button (`renderNeeds` →
 `openOverhaul` → `#ovmodal`) hits **`/api/overhaul`** only; it sets `design_mode: creative`
@@ -206,3 +206,9 @@ timestamp + one-line summary; click to render; "new" dot since last opened) — 
   completeness pass (entire catalog) (CLAUDE.md rehearsal section; BACKEND.md swap checklist).
 - **Backend baseline + configurator** — `templates/ecommerce-catalog/BACKEND.md` + `backend-config.yaml`.
 - **Publish-always** — every `03-site` change ends build + Publish preview + status refresh.
+- **Studio-owned publish net** — a headless `claude -p` build (Creative/Overhaul, full-build, advance)
+  cannot authorize the outbound `wrangler pages deploy`, so it must NOT be the thing responsible for
+  publishing. `studio.py` `publish_preview(slug)` deploys `03-site/dist` from the operator's authed
+  shell; `run_advance` calls it after any successful headless job that left a fresh `dist` (or a
+  `publish_blocked` flag). On deploy failure it keeps the prior `preview_url`, sets `preview_stale`,
+  and logs loudly (never a silent stale url). See incident WS-INC-STUDIO-002.

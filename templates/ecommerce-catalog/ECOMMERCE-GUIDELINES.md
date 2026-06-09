@@ -268,6 +268,17 @@ two ways — never two features.
      - slide-out drawers for cart / wishlist / filters / mobile-nav — transforms, no page reloads;
      - a sticky header that condenses on scroll + smooth anchored in-page navigation;
      - the ONE signature motion moment — exactly one deliberate flourish that becomes the site's tell.
+  3. **Original generated graphic system (tropical-orchid atmosphere)** — creative mode may DRAW its
+     own original, code-based decorative art for a lush collector-greenhouse vibe, so the site feels
+     alive and designed even where product photography is weak or absent. A coherent FAMILY, never
+     scattered clip-art:
+     - original SVG botanical line-work — orchid forms, miniature/tropical species silhouettes,
+       monstera / palm / fern fronds, aerial roots, pseudobulbs — as line art or tonal shapes, NOT
+       photorealistic renderings;
+     - atmospheric tropical motifs — dappled-light gradients, canopy/leaf-shadow overlays, mist/
+       humidity texture, greenhouse-glass framing, pressed-specimen marks, herbarium plate borders;
+     - a connective system — section dividers, corner ornaments, decorative backgrounds behind type,
+       and the ONE signature motion moment realised as an animated draw-in line motif.
   Reachable via the **Creative toggle at build start** OR the **🎨 Overhaul button** on the boards card.
   Both offer the SAME two input modes: **"Claude develops it"** or **"I provide a starting point"**
   (`02-intake/overhaul-brief.md`; Mode-B guardrail — inspiration, never the reference's trade dress).
@@ -277,13 +288,23 @@ two ways — never two features.
   parity floor and every catalog/cart/filter FUNCTION are unchanged (interactivity is the EXPRESSION
   of existing functions, never new ones); photography stays resolution-limited (§5.4) — smoothness
   comes from motion + spacing + graphics, never upscaled photos.
+- **HONESTY BOUNDARY for generated art [HARD]:** generated elements are DECORATION & ATMOSPHERE ONLY —
+  they NEVER stand in for a real product image. A product card/page shows the real photo or the honest
+  type-led fallback (§5.4), NEVER an AI-invented "orchid" presented as a sellable plant — no fabricated
+  product representations, ever. All generated art is ORIGINAL (drawn as code) — never traced from or
+  copied off existing photos, illustrations, or another site's assets. The restrained muted palette
+  still applies (soft, atmospheric, not loud — the real plants are the colour; generated motifs are the
+  quiet tropical surround). Decorative SVG carries `aria-hidden`, must not block first paint, and honours
+  `prefers-reduced-motion`.
 - **Three HARD invariants across all tiers:** the **parity floor** is untouched; **every Hard rule**
   is untouched; the swing is **EXPRESSION-ONLY** (layout / type / colour / motion / interactivity /
   graphics), never facts, features, or guardrails. (Implementation: `studio.py` `creative_clause()`
   feeds both `full_build_runbook` and `overhaul_runbook`; SYSTEM.md §4.)
-- **Design QA Gate (creative):** the §5.7 audit gains — in the SAME brand-moment question, not a
-  separate one — "does the navigation/motion layer LAND: section narrative, scroll-reveals, hover
-  tiles, drawers, condensing header — smooth, purposeful, and reduced-motion-safe?"
+- **Design QA Gate (creative):** the §5.7 audit gains — in the SAME brand-moment question, not
+  separate ones — "does the navigation/motion layer LAND (section narrative, scroll-reveals, hover
+  tiles, drawers, condensing header — smooth, purposeful, reduced-motion-safe), AND do the generated
+  elements form ONE coherent tropical-botanical system that elevates the atmosphere — with the honesty
+  boundary intact (no generated element posing as a real product)?"
 
 ---
 

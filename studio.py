@@ -260,6 +260,50 @@ def advance_action(slug, st):
                   desc="Runs the launch checks and writes reports into 04-cutover/.")
     return None  # queued/scraping/created/error/awaiting-owner(no real action)/cutover-checked
 
+def publish_preview(slug):
+    """Studio-OWNED publish safety-net. PUBLISH-ALWAYS must not depend on a headless `claude -p`
+    job being able to run `wrangler pages deploy` — in non-interactive `-p` mode that outbound
+    deploy can't be authorized, so the agent falls back to publish_blocked + preview_stale and the
+    build ships with no live link (the creative/overhaul-build symptom). studio.py runs in the
+    operator's authed shell, so it deploys 03-site/dist deterministically and records the URL.
+    On failure it obeys the CLAUDE.md deploy-failure rule: keep the prior preview_url, flag
+    preview_stale, log loudly. Returns the deploy URL on success else None."""
+    cdir = CLIENTS / slug
+    dist = cdir / "03-site" / "dist"
+    if not dist.is_dir():
+        return None
+    try:
+        proc = subprocess.run(
+            ["wrangler", "pages", "deploy", str(dist),
+             "--project-name", f"ws-{slug}", "--commit-dirty=true"],
+            cwd=str(ROOT), capture_output=True, text=True, timeout=600)
+        out = (proc.stdout or "") + (proc.stderr or "")
+        url = next((m.group(0) for m in re.finditer(r"https://[^\s]+\.pages\.dev", out)), None)
+        st = read_status(cdir)
+        if proc.returncode == 0 and url:
+            base = f"https://ws-{slug}.pages.dev"
+            st["preview_url"] = base
+            st["preview_published_at"] = now()
+            st.pop("preview_stale", None)
+            st.pop("publish_blocked", None)
+            st.setdefault("log", []).append(
+                f"{now()} PUBLISHED preview (studio-owned deploy) -> {url} (base alias {base})")
+            write_status(cdir, st)
+            return base
+        st["preview_stale"] = True
+        st["publish_blocked"] = "studio wrangler deploy failed; see log"
+        st.setdefault("log", []).append(
+            f"{now()} PUBLISH FAILED (studio deploy, exit {proc.returncode}): " + out.strip()[-300:])
+        write_status(cdir, st)
+        return None
+    except Exception as e:
+        st = read_status(cdir)
+        st["preview_stale"] = True
+        st["publish_blocked"] = f"studio wrangler deploy errored: {e}"
+        st.setdefault("log", []).append(f"{now()} PUBLISH FAILED (studio deploy errored): {e}")
+        write_status(cdir, st)
+        return None
+
 def run_advance(slug, command, kind="advance", fail_flag="advance_failed"):
     """Run `claude -p <command>` from ROOT in the background (used by Advance + backend proposal).
     Start/finish lines go to status.json only when the claude subprocess is NOT running (avoids
@@ -284,6 +328,19 @@ def run_advance(slug, command, kind="advance", fail_flag="advance_failed"):
     rc = proc.wait()
     if rc == 0:
         bump(cdir, msg=f"{kind} finished ok")          # safe: claude has exited
+        # PUBLISH-ALWAYS safety-net: a headless `claude -p` build can't authorize the outbound
+        # `wrangler pages deploy`, so it may exit with a fresh 03-site/dist that was never
+        # published (publish_blocked) — studio.py owns the deploy from the authed shell. Fires
+        # only when there's a dist that's newer than the recorded preview OR publish is flagged
+        # blocked; config-only jobs (no new dist) are skipped.
+        st = read_status(cdir)
+        dist = cdir / "03-site" / "dist"
+        if dist.is_dir() and (st.get("publish_blocked")
+                              or not st.get("preview_published_at")
+                              or site_newer_than(cdir, st.get("preview_published_at", ""))):
+            url = publish_preview(slug)
+            bump(cdir, msg=(f"{kind}: auto-published preview -> {url}" if url
+                            else f"{kind}: auto-publish FAILED (preview left stale; see log)"))
     else:
         st = read_status(cdir)
         if fail_flag: st[fail_flag] = True
@@ -373,7 +430,18 @@ def creative_clause(input_mode):
             "(IntersectionObserver + CSS, no heavy library), hover category tiles as the 'shop by' entry, "
             "slide-out drawers (cart/wishlist/filters/mobile-nav, transforms, no reloads), a condensing "
             "sticky header + smooth anchored nav, and ONE signature motion moment. Motion SERVES "
-            f"navigation not decoration. {src} INVARIANTS HOLD UNCHANGED: the parity floor (every "
+            "navigation not decoration. AND (3) an ORIGINAL GENERATED GRAPHIC SYSTEM for a lush "
+            "tropical collector-greenhouse atmosphere — code-drawn original SVG botanical line-work "
+            "(orchid forms, tropical silhouettes, monstera/palm/fern fronds, aerial roots, pseudobulbs "
+            "as line/tonal art, NOT photorealistic), atmospheric motifs (dappled-light gradients, "
+            "leaf-shadow overlays, mist texture, greenhouse-glass framing, herbarium plate borders), and "
+            "a connective family (section dividers, corner ornaments, decorative type backgrounds, the "
+            "signature draw-in line motif) — ONE coherent family, never scattered clip-art; muted/soft, "
+            "aria-hidden, never blocking first paint. HONESTY BOUNDARY (HARD): generated art is DECORATION "
+            "& ATMOSPHERE ONLY — it NEVER stands in for a real product image; a product card/page shows the "
+            "real photo or the honest type-led fallback, NEVER an invented 'orchid' posed as a sellable "
+            "plant; all generated art is ORIGINAL (drawn as code), never traced/copied from photos, "
+            f"illustrations, or another site. {src} INVARIANTS HOLD UNCHANGED: the parity floor (every "
             "CARRY-OVER feature) stays; CARRY OVER EVERY SOURCE IMAGE — re-import the image records "
             "(00-source/01-baseline) into the reimagined components; the from-scratch reimagining changes "
             "HOW each image/feature is expressed, NEVER WHETHER it appears (dropping an image is a parity "
