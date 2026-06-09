@@ -1155,6 +1155,7 @@ button.ghost{background:transparent;color:var(--muted);border-color:var(--line);
 button.ghost:hover{color:var(--amber);border-color:var(--amber)}
 button.done{background:#3a6b4f;border-color:#3a6b4f;color:#fff}
 .row{border:1px solid var(--line);background:var(--panel);margin:0 0 .8rem;padding:1rem 1.2rem}
+.live{display:contents}
 .row.fin{border-color:#3a6b4f}
 .top{display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;align-items:center}
 .nm{font-family:var(--d);font-size:1.35rem;text-transform:uppercase}
@@ -1403,15 +1404,9 @@ function versionLinks(c){
 }
 async function openSession(key){ await api('/open',{slug:key==='studio'?'':key, studio:key==='studio'}); }
 function saveDrafts(){ chatOpen.forEach(k=>{ const t=document.getElementById('cin-'+k); if(t) chatDraft[k]=t.value; }); }
-// Preserve transient row UI state across the 4s full re-render (general — every client row):
-// in-progress text (paste/report) via [data-keep], and non-default radios/checkboxes.
-function snapState(){ const s={vals:{},radios:{}};
-  document.querySelectorAll('#list [data-keep]').forEach(el=>{ s.vals[el.getAttribute('data-keep')]=el.value; });
-  document.querySelectorAll('#list input[type=radio]:checked').forEach(el=>{ if(el.name) s.radios[el.name]=el.value; });
-  return s; }
-function restoreState(s){
-  document.querySelectorAll('#list [data-keep]').forEach(el=>{ const v=s.vals[el.getAttribute('data-keep')]; if(v!==undefined) el.value=v; });
-  Object.keys(s.radios).forEach(name=>{ const el=document.querySelector('#list input[type=radio][name="'+name+'"][value="'+s.radios[name]+'"]'); if(el) el.checked=true; }); }
+// snapState/restoreState (the old data-keep snapshot-and-restore patch) are GONE — replaced by the
+// interaction-aware reconcile in load()/reconcileList(), which never recreates a control mid-interaction
+// (so file inputs, focus, caret, radios, panels all survive structurally, not by value restoration).
 function restoreChats(){ chatOpen.forEach(k=>{ const p=document.getElementById('chat-'+k); if(p){ p.style.display='block';
   const t=document.getElementById('cin-'+k); if(t&&chatDraft[k]!==undefined) t.value=chatDraft[k]; renderChat(k);} }); }
 function toggleChat(key){ const p=document.getElementById('chat-'+key); if(!p) return;
@@ -1534,10 +1529,45 @@ async function load(){
   renderVersion(d.version||{});
   const sr=document.getElementById('studioreports');
   if(sr) sr.innerHTML=(d.studio_reports&&d.studio_reports.length)?`<span class="mono-label">studio reports${newDot('__studio__',d.studio_reports)}</span> `+d.studio_reports.slice(0,8).map(r=>`<button class="docbtn" onclick="openReport('__studio__','${r.file}','${d.studio_reports[0].file}')" title="${esc(r.summary)}">${esc(r.kind)} · ${r.ts}</button>`).join(' '):'';
-  const el = document.getElementById('list');
-  if(!d.clients.length){ el.innerHTML='<p class="empty">No active clients — start one above.</p>'; return; }
-  const KEEP = snapState();
-  el.innerHTML = d.clients.map(c=>`<div class="row${c.done?' fin':''}">
+  reconcileList(d.clients);
+}
+// ---- interaction-aware render (ARCHITECTURAL INVARIANT: a poll NEVER destroys in-flight UI state) ----
+// Each row = a data-only .live zone (rebuilt every poll) + a controls zone (stateful inputs, built
+// once). A row the user is touching — focus, a STAGED FILE (can't be value-restored, so we skip it),
+// typed text, a flipped control, or an open panel — is NOT rebuilt; only its .live zone is patched,
+// so stages/logs keep flowing while user state survives structurally. Same guard protects #needs.
+function interacting(el){
+  const a=document.activeElement;
+  if(a && a!==document.body && el.contains(a)) return true;
+  for(const f of el.querySelectorAll('input[type=file]')) if(f.files && f.files.length) return true;
+  for(const t of el.querySelectorAll('textarea,input[type=text]')) if((t.value||'').trim()) return true;
+  for(const k of el.querySelectorAll('input[type=checkbox],input[type=radio]')) if(k.checked!==k.defaultChecked) return true;
+  for(const p of el.querySelectorAll('.chatpanel')) if(p.style.display==='block') return true;
+  return false;
+}
+function reconcileList(clients){
+  const list=document.getElementById('list');
+  if(!clients.length){ list.innerHTML='<p class="empty">No active clients — start one above.</p>'; return; }
+  const empty=list.querySelector('.empty'); if(empty) empty.remove();
+  const seen=new Set();
+  clients.forEach(c=>{
+    seen.add(c.slug);
+    let row=document.getElementById('row-'+c.slug);
+    if(!row){
+      row=document.createElement('div'); row.id='row-'+c.slug; row.className='row'+(c.done?' fin':'');
+      row.innerHTML=liveZone(c)+controlsZone(c); list.appendChild(row); restoreChats();
+    } else if(interacting(row)){            // LOCKED: patch live data only, never touch controls
+      row.className='row'+(c.done?' fin':'');
+      const live=row.querySelector(':scope > .live');
+      if(live) live.outerHTML=liveZone(c); else row.insertAdjacentHTML('afterbegin', liveZone(c));
+    } else {                                // idle: safe to rebuild the whole row
+      row.className='row'+(c.done?' fin':'');
+      row.innerHTML=liveZone(c)+controlsZone(c); restoreChats();
+    }
+  });
+  [...list.children].forEach(ch=>{ const id=ch.id||''; if(id.indexOf('row-')===0 && !seen.has(id.slice(4))) ch.remove(); });
+}
+function liveZone(c){ return `<div class="live">
     <div class="top"><div><span class="nm">${c.name}</span> <span class="dom">${c.domain}</span></div>
     <div class="btns"><span class="chip">${c.stage}</span>
       ${c.decisions_open?`<span class="needbadge">${c.decisions_open} decision${c.decisions_open>1?'s':''}</span>`:''}
@@ -1548,7 +1578,7 @@ async function load(){
       ${c.full_build?`<button class="adv fb" ${c.full_build.enabled?'':'disabled'} title="${(c.full_build.tooltip||c.full_build.desc||'').replace(/"/g,'&quot;')}" onclick="openFullBuild('${c.slug}')">${c.full_build.resumable?'⟳ ':'⚡ '}${c.full_build.label}</button>`:''}
       ${c.can_configure?`<button class="ghost" onclick="configBackend('${c.slug}')">Configure backend${c.backend_cfg?` · ${c.backend_cfg.status} v${c.backend_cfg.version}`:''}</button>`:''}
       ${c.backend_cfg?(c.backend_cfg.mode==='rehearsal'?`<span class="rehbadge">REHEARSAL</span><button class="ghost" onclick="exitReh('${c.slug}')">Exit rehearsal</button>`:`<button class="ghost" onclick="enterReh('${c.slug}')">Enter rehearsal mode</button>`):''}
-      ${d.server?(d.ttyd_url?`<a class="ghost" href="${d.ttyd_url}" target="_blank" rel="noopener">Open session ↗</a>`:''):`<button class="ghost" onclick="api('/open',{slug:'${c.slug}'})">Claude: ${c.name}</button>`}
+      ${DATA.server?(DATA.ttyd_url?`<a class="ghost" href="${DATA.ttyd_url}" target="_blank" rel="noopener">Open session ↗</a>`:''):`<button class="ghost" onclick="api('/open',{slug:'${c.slug}'})">Claude: ${c.name}</button>`}
       ${c.rerun?`<button class="ghost" onclick="act('/rerun','${c.slug}')">Rerun</button>`:''}
       <button class="${c.done?'done':'ghost'}" onclick="if(confirm('Archive ${c.slug}? Moves it to archive/ and clears this row.'))act('/archive','${c.slug}')">Archive</button>
     </div></div>
@@ -1561,7 +1591,9 @@ async function load(){
     ${c.documents&&c.documents.length?`<div class="docs"><span class="mono-label">documents</span> ${c.documents.map(n=>`<button class="docbtn" onclick="openDoc('${c.slug}','${n}')">${n}</button>`).join(' ')}</div>`:''}
     ${c.concepts&&c.concepts.length?`<div class="docs"><span class="mono-label">concept boards</span> ${c.concepts.map(b=>`<a class="docbtn" href="${b.url||'#'}" target="_blank" rel="noopener" title="${esc(b.one_liner)}">${b.recommended?'★ ':''}${esc(b.name)} ↗</a><a class="docbtn" href="/api/concept-thumb?slug=${c.slug}&name=${esc(b.thumb_desktop)}" target="_blank" rel="noopener" title="desktop screenshot">🖼 png</a>`).join(' ')}</div>`:''}
     ${c.reports&&c.reports.length?`<div class="docs"><span class="mono-label">reports${newDot(c.slug,c.reports)}</span> ${c.reports.slice(0,8).map(r=>`<button class="docbtn" onclick="openReport('${c.slug}','${r.file}','${c.reports[0].file}')" title="${esc(r.summary)}">${esc(r.kind)} · ${r.ts}</button>`).join(' ')}</div>`:''}
-    <form class="report" onsubmit="return reportProblem(event,'${c.slug}')">
+    <div class="log">${c.log.join('\\n')}</div>
+  </div>`; }
+function controlsZone(c){ return `<form class="report" onsubmit="return reportProblem(event,'${c.slug}')">
       <input type="text" data-keep="report-${c.slug}" placeholder="Report a problem — what's broken? (becomes an incident, then a diagnostic)" required>
       <button class="ghost">Report ⚑</button>
     </form>
@@ -1584,11 +1616,7 @@ async function load(){
     </div>
     ${c.paste?`<form class="paste" onsubmit="return answers(event,'${c.slug}')">
       <textarea data-keep="answers-${c.slug}" placeholder="Step 2 — paste the owner's questionnaire summary here…"></textarea>
-      <button>Save owner answers</button></form>`:''}
-    <div class="log">${c.log.join('\\n')}</div></div>`).join('');
-  restoreState(KEEP);
-  restoreChats();
-}
+      <button>Save owner answers</button></form>`:''}`; }
 async function newClient(e){ e.preventDefault();
   const f = e.target;
   await api('/new', {domain:f.domain.value, name:f.name.value}); f.reset(); load(); return false; }
@@ -1599,6 +1627,7 @@ function cp(t){ navigator.clipboard&&navigator.clipboard.writeText(t); }
 function renderNeeds(decs, incs){
   incs = incs||[];
   const box=document.getElementById('needs');
+  if(interacting(box)) return;   // INVARIANT: never blow away an in-flight boards multi-select / typed text
   if(!decs.length && !incs.length){ box.innerHTML=''; return; }
   const incsHTML = !incs.length ? '' : `<div class="needstrip incstrip"><div class="needhead">⚑ Reported problems · ${incs.length}</div>`+incs.map(it=>`<div class="deccard"><div class="decq">${esc(it.symptom||it.file)} <span class="decscope">${it.scope==='__studio__'?'studio':esc(it.scope)}</span></div><div class="decreason">incident ${esc(it.file)} — ${it.busy?'diagnosing…':'open · diagnostic queued'}</div></div>`).join('')+`</div>`;
   const decsHTML = !decs.length ? '' : `<div class="needstrip"><div class="needhead">⬤ Needs your call · ${decs.length}</div>`+

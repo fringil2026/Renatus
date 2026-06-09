@@ -361,6 +361,17 @@ stamp is verified to equal HEAD.** Concretely:
    studio.py fingerprint differs from the one the running process loaded. Never report a studio.py
    change "done" while that banner would show.
 
+**Render invariant — binding (the dashboard poll must NEVER destroy in-flight UI state).** The 4 s
+auto-refresh is interaction-aware, not a wholesale `innerHTML` rebuild: each row is a data-only
+`.live` zone (re-rendered every poll) plus a controls zone (stateful inputs, built once); a container
+the user is touching — focus, a STAGED FILE, typed text, a flipped radio/checkbox, an open panel — is
+never rebuilt, only its `.live` zone is patched (`load()`→`reconcileList()`/`interacting()`; the same
+guard protects `#needs`). This is an ARCHITECTURAL property, not a per-control concern: any NEW
+interactive element is automatically protected as long as it lives in the controls zone (or is caught
+by `interacting()`) — do NOT reintroduce snapshot-and-restore patches or full-list `innerHTML=`
+replacement. File inputs in particular can't be value-restored (browser security), so the only correct
+fix is skip-while-staged, which this guarantees.
+
 ## Decision surfaces — binding
 Any capability that requires the human's JUDGMENT — mode changes, config confirmations, choices
 between alternatives, approvals — MUST ship with a dashboard control in the SAME commit that
