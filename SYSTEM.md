@@ -165,6 +165,26 @@ allowed; honest type-led fallback, never upscaled, §5.4).
   intact). Endpoints: `/api/build-versions`, `/api/promote-version`, `/api/archive-version`. Doctrine:
   ECOMMERCE-GUIDELINES §5.10.
 
+### 3d · Build resilience (concurrency cap · transient-vs-real failures · restart-safe resume)
+A mass build-failure taught three lessons; each has a lasting guard:
+- **Concurrency cap (`CLAUDE_SEM`, `MAX_CLAUDE_JOBS`=2).** The trigger was a self-inflicted burst —
+  ~15 clients × 2-version builds + overhauls fired at once, exhausting the Claude **monthly spend
+  limit**, after which every headless job exited 1. A global semaphore now paces EVERY `claude -p`
+  spawn (`run_advance` + `_claude_p_build`), so the studio can never blow the budget / overload the
+  API in one wave. Raise via env when the budget is large.
+- **Transient ≠ real failure.** `is_transient_failure()` matches budget/rate/overload signatures in a
+  job's output tail. A job that dies on one is marked **`paused`** (version) or `status.paused` (advance/
+  overhaul) — RESUMABLE — not `build-failed`/`*_failed` (terminal). Genuine non-transient failures stay
+  terminal so they don't loop.
+- **Restart-safe resume.** Multi-version orchestration is in-memory (a driver thread); a studio restart
+  orphaned it (the seattle-orchids bug: image-led built-but-never-deployed, creative never started).
+  `run_version_builds()` is now **resumable** (queue in `status.json`; skip published, re-deploy `built`/
+  `publish-failed`, build the rest) and a **`version_reaper_loop()`** (every ~20 s, guarded by
+  `claude_job_running()` so it never races a live build) auto-resumes orphaned/paused queues. The
+  **"↻ Resume N paused/failed builds"** header button (`/api/resume-all`) resets terminal `build-failed`
+  + `paused` versions to `queued`, re-fires budget-killed creative overhauls, and kicks the reaper —
+  all paced by `CLAUDE_SEM`.
+
 ## 4 · Concept boards (the visual concept decision)
 After the scrape, before any prototype, the human picks from real designs spanning a **creativity
 spectrum**, not documents. `.claude/skills/site-baseline/scripts/concept_boards.py` reads

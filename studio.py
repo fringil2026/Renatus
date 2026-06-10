@@ -53,6 +53,20 @@ CLAUDE_BIN = os.environ.get("CLAUDE_BIN", "claude")
 STUDIO_KEY = "__studio__"
 TASKS = {}            # key -> {kind, label, started, tail[], proc}
 TASK_LOCK = threading.Lock()
+# Global cap on CONCURRENT `claude -p` jobs. The mass build-failure was a self-inflicted burst:
+# ~15 clients × 2-version builds + overhauls fired at once, exhausting the Claude monthly spend
+# limit, after which every headless job exited 1. The semaphore paces ALL claude -p spawns so the
+# studio can never blow the budget (or overload the API) in one wave. Raise via MAX_CLAUDE_JOBS.
+MAX_CLAUDE_JOBS = int(os.environ.get("MAX_CLAUDE_JOBS", "2"))
+CLAUDE_SEM = threading.Semaphore(MAX_CLAUDE_JOBS)
+# Transient / EXTERNAL failure signatures — budget, rate, overload. A job that dies on one of these
+# didn't fail because of bad code; it's PAUSED (resumable), not build-failed (terminal).
+TRANSIENT_MARKERS = ("spend limit", "usage limit", "rate limit", "rate_limit", "overloaded",
+                     "overload", "monthly spend", "quota", "too many requests",
+                     " 429", " 503", " 502", " 529", "exceeded")
+def is_transient_failure(text):
+    t = (text or "").lower()
+    return any(m in t for m in TRANSIENT_MARKERS)
 
 # Status DESCRIPTIONS only — never a command to type. Every actionable stage carries a real
 # button (see advance_action / full_build_action); the "Copy command" ⧉ link is the terminal
@@ -452,44 +466,105 @@ def version_build_runbook(slug, idx, mode):
             f"On any human-judgment fork, open a decision and STOP.")
 def _claude_p_build(slug, command, kind):
     """One headless `claude -p` build, NO auto-publish (the multi-version driver owns per-version
-    deploy). Mirrors run_advance's tail bookkeeping. Returns the exit code."""
+    deploy). Paced by CLAUDE_SEM (global concurrency cap). Returns (exit_code, tail_text)."""
     cdir = CLIENTS / slug
-    bump(cdir, msg=f"{kind} started")
-    try:
-        proc = subprocess.Popen([CLAUDE_BIN, "-p", command], cwd=str(ROOT),
-                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-    except Exception as e:
-        bump(cdir, msg=f"{kind} FAILED to start: {e}"); return 1
-    with TASK_LOCK:
-        TASKS[slug] = {"kind": kind, "label": command[:80], "started": now(), "tail": [], "proc": proc}
-    tail = TASKS[slug]["tail"]
-    for line in proc.stdout:
-        line = line.rstrip()
-        if line: tail.append(line); del tail[:-60]
-    rc = proc.wait()
-    bump(cdir, msg=f"{kind} finished (exit {rc})")
-    return rc
-def run_version_builds(slug, modes):
-    """Driver thread: build each selected version SEQUENTIALLY (one Claude task per client at a time)
-    into its own dir, then deploy it to its own project. Each is independent + isolated."""
+    with CLAUDE_SEM:                            # global cap — never burst the budget
+        bump(cdir, msg=f"{kind} started")
+        try:
+            proc = subprocess.Popen([CLAUDE_BIN, "-p", command], cwd=str(ROOT),
+                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        except Exception as e:
+            bump(cdir, msg=f"{kind} FAILED to start: {e}"); return 1, str(e)
+        with TASK_LOCK:
+            TASKS[slug] = {"kind": kind, "label": command[:80], "started": now(), "tail": [], "proc": proc}
+        tail = TASKS[slug]["tail"]
+        for line in proc.stdout:
+            line = line.rstrip()
+            if line: tail.append(line); del tail[:-60]
+        rc = proc.wait()
+        bump(cdir, msg=f"{kind} finished (exit {rc})")
+        return rc, " / ".join(tail[-6:])
+def run_version_builds(slug, modes=None):
+    """Driver: build each selected version SEQUENTIALLY into its own dir, then deploy to its own
+    project. RESUMABLE + restart-safe — the queue lives in status.json versions[], so a server
+    restart (or reap_version_builds) can continue it: already-published versions are skipped, a
+    version the agent marked 'built' is just (re)deployed, the rest are built then deployed. The
+    in-memory driver thread no longer being the only owner of the publish step is the whole fix."""
     cdir = CLIENTS / slug
-    st = read_status(cdir)
-    st["multi_version"] = len(modes) > 1
-    st["versions"] = [{"idx": i, "mode": m, "label": m, "project": version_project(slug, i),
-                       "site_dir": version_site_dirname(i), "status": "queued",
-                       "preview_url": "", "published_at": ""} for i, m in enumerate(modes)]
-    write_status(cdir, st)
-    bump(cdir, msg=f"multi-version build queued: {', '.join(modes)} ({len(modes)} version(s))")
-    for idx, mode in enumerate(modes):
+    if modes is not None:                       # fresh start: (re)scaffold the queue
+        st = read_status(cdir)
+        st["multi_version"] = len(modes) > 1
+        st["versions"] = [{"idx": i, "mode": m, "label": m, "project": version_project(slug, i),
+                           "site_dir": version_site_dirname(i), "status": "queued",
+                           "preview_url": "", "published_at": ""} for i, m in enumerate(modes)]
+        write_status(cdir, st)
+        bump(cdir, msg=f"multi-version build queued: {', '.join(modes)} ({len(modes)} version(s))")
+    for v in read_status(cdir).get("versions", []):
+        idx, mode, status = v.get("idx"), v.get("mode"), v.get("status")
+        dist = cdir / version_site_dirname(idx) / "dist"
+        if status == "published" and v.get("preview_url"):
+            continue                            # already done
+        if status == "build-failed":
+            continue                            # terminal (genuine) — only an explicit 'resume all' retries it
+        if status in ("built", "publish-failed") and dist.is_dir():
+            url = publish_version(slug, idx)    # built by a now-dead driver / deploy hiccup → just (re)deploy
+            bump(cdir, msg=(f"v{idx+1} ({mode}) published -> {url}" if url else f"v{idx+1} ({mode}) publish FAILED"))
+            continue
         _set_version_status(cdir, idx, "building")
-        rc = _claude_p_build(slug, version_build_runbook(slug, idx, mode), f"v{idx+1} build ({mode})")
+        rc, tail = _claude_p_build(slug, version_build_runbook(slug, idx, mode), f"v{idx+1} build ({mode})")
         if rc == 0:
             url = publish_version(slug, idx)
             bump(cdir, msg=(f"v{idx+1} ({mode}) published -> {url}" if url else f"v{idx+1} ({mode}) publish FAILED"))
+        elif is_transient_failure(tail):
+            _set_version_status(cdir, idx, "paused")   # EXTERNAL (budget/rate/overload) — auto-resumable
+            bump(cdir, msg=f"v{idx+1} ({mode}) PAUSED (transient — will auto-resume): {tail[-120:]}")
         else:
             _set_version_status(cdir, idx, "build-failed")
-            bump(cdir, msg=f"v{idx+1} ({mode}) BUILD FAILED (exit {rc})")
+            bump(cdir, msg=f"v{idx+1} ({mode}) BUILD FAILED (exit {rc}): {tail[-120:]}")
     with TASK_LOCK: TASKS.pop(slug, None)
+
+def claude_job_running(slug):
+    """Is a headless `claude -p` job for this client alive? Survives a studio restart (unlike the
+    in-memory TASKS lock), so the reaper never touches a client whose build/assemble is still going."""
+    try:
+        out = subprocess.run(["ps", "-ax", "-o", "command="], capture_output=True, text=True, timeout=5).stdout
+        return any(("claude -p" in ln and f" {slug}" in ln) for ln in out.splitlines())
+    except Exception:
+        return False
+def reap_version_builds():
+    """Restart-safe recovery: a multi-version build's in-memory driver thread dies on a server
+    restart, orphaning the running build and dropping the rest of the queue (the seattle-orchids
+    bug: image-led built but never deployed, creative never started). For every IDLE multi_version
+    client (no live claude job, not in TASKS) with an incomplete queue, resume it — deploy any
+    'built'-but-unpublished version and build/deploy the rest. Idempotent; safe to call on a tick."""
+    if not CLIENTS.exists():
+        return
+    for cdir in sorted(CLIENTS.iterdir()):
+        if not cdir.is_dir():
+            continue
+        slug = cdir.name
+        vers = read_status(cdir).get("versions", [])
+        # auto-resume transient/orphaned states; genuine build-failed waits for an explicit 'resume all'
+        RESUMABLE = {"queued", "building", "paused", "built", "publish-failed"}
+        if not vers or not any(v.get("status") in RESUMABLE for v in vers):
+            continue
+        with TASK_LOCK:
+            if slug in TASKS:
+                continue
+        if claude_job_running(slug):            # a build/assemble is live — don't race its dir
+            continue
+        with TASK_LOCK:                          # claim the slot before spawning (no double-resume)
+            if slug in TASKS:
+                continue
+            TASKS[slug] = {"kind": "version build (resume)", "label": "resume multi-version", "started": now(), "tail": [], "proc": None}
+        bump(cdir, msg="reaper: resuming orphaned multi-version build (driver was lost on a restart)")
+        threading.Thread(target=run_version_builds, args=(slug, None), daemon=True).start()
+def version_reaper_loop():
+    time.sleep(25)                               # let a fresh restart settle / let me re-trigger first
+    while True:
+        try: reap_version_builds()
+        except Exception: pass
+        time.sleep(20)
 
 def run_advance(slug, command, kind="advance", fail_flag="advance_failed"):
     """Run `claude -p <command>` from ROOT in the background (used by Advance + backend proposal).
@@ -497,22 +572,24 @@ def run_advance(slug, command, kind="advance", fail_flag="advance_failed"):
     clobbering the file it owns); live snippets stream into the in-memory task tail on the row."""
     cdir = CLIENTS / slug
     bump(cdir, msg=f'{kind} started: claude -p "{command}"')   # safe: before spawn
-    try:
-        proc = subprocess.Popen([CLAUDE_BIN, "-p", command], cwd=str(ROOT),
-                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-    except Exception as e:
-        bump(cdir, msg=f"{kind} FAILED to start: {e}")
-        with TASK_LOCK: TASKS.pop(slug, None)
-        return
-    with TASK_LOCK:
-        TASKS[slug] = {"kind": kind, "label": command, "started": now(), "tail": [], "proc": proc}
-    tail = TASKS[slug]["tail"]
-    for line in proc.stdout:
-        line = line.rstrip()
-        if line:
-            tail.append(line)
-            del tail[:-60]
-    rc = proc.wait()
+    rc, tail = 1, []
+    with CLAUDE_SEM:                                   # global cap — paces overhaul/advance/process/intake
+        try:
+            proc = subprocess.Popen([CLAUDE_BIN, "-p", command], cwd=str(ROOT),
+                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        except Exception as e:
+            bump(cdir, msg=f"{kind} FAILED to start: {e}")
+            with TASK_LOCK: TASKS.pop(slug, None)
+            return
+        with TASK_LOCK:
+            TASKS[slug] = {"kind": kind, "label": command, "started": now(), "tail": [], "proc": proc}
+        tail = TASKS[slug]["tail"]
+        for line in proc.stdout:
+            line = line.rstrip()
+            if line:
+                tail.append(line)
+                del tail[:-60]
+        rc = proc.wait()
     if rc == 0:
         bump(cdir, msg=f"{kind} finished ok")          # safe: claude has exited
         # PUBLISH-ALWAYS safety-net: a headless `claude -p` build can't authorize the outbound
@@ -521,6 +598,7 @@ def run_advance(slug, command, kind="advance", fail_flag="advance_failed"):
         # only when there's a dist that's newer than the recorded preview OR publish is flagged
         # blocked; config-only jobs (no new dist) are skipped.
         st = read_status(cdir)
+        st.pop("paused", None); st.pop("paused_kind", None)
         dist = cdir / "03-site" / "dist"
         if dist.is_dir() and (st.get("publish_blocked")
                               or not st.get("preview_published_at")
@@ -528,10 +606,17 @@ def run_advance(slug, command, kind="advance", fail_flag="advance_failed"):
             url = publish_preview(slug)
             bump(cdir, msg=(f"{kind}: auto-published preview -> {url}" if url
                             else f"{kind}: auto-publish FAILED (preview left stale; see log)"))
+        write_status(cdir, st)
     else:
         st = read_status(cdir)
-        if fail_flag: st[fail_flag] = True
-        st.setdefault("log", []).append(f"{now()} {kind} FAILED (exit {rc}) — tail: " + " / ".join(tail[-5:])[:400])
+        tail_txt = (" / ".join(tail[-6:]))[:400]
+        if is_transient_failure(tail_txt):             # budget/rate/overload — PAUSED (resumable), not failed
+            st["paused"] = True; st["paused_kind"] = kind
+            if fail_flag: st.pop(fail_flag, None)
+            st.setdefault("log", []).append(f"{now()} {kind} PAUSED (transient — resumable): {tail_txt[-180:]}")
+        else:
+            if fail_flag: st[fail_flag] = True
+            st.setdefault("log", []).append(f"{now()} {kind} FAILED (exit {rc}) — tail: {tail_txt}")
         write_status(cdir, st)
     with TASK_LOCK: TASKS.pop(slug, None)
 
@@ -968,6 +1053,19 @@ def pending_edits_count(slug):
     ed = CLIENTS / slug / "02-intake" / "edits"
     return len(list(ed.glob("*-PENDING-*.md"))) if ed.exists() else 0
 
+def resumable_build_count():
+    """Clients with a paused/failed/incomplete build that 'Resume paused builds' would relaunch."""
+    if not CLIENTS.exists(): return 0
+    RESUMABLE = {"queued", "building", "paused", "built", "publish-failed", "build-failed"}
+    n = 0
+    for d in CLIENTS.iterdir():
+        if not d.is_dir(): continue
+        st = read_status(d)
+        if st.get("overhaul_failed") or st.get("paused") or \
+           any(v.get("status") in RESUMABLE for v in st.get("versions", [])):
+            n += 1
+    return n
+
 def _incident_symptom(path):
     try:
         lines = path.read_text(errors="ignore").splitlines()
@@ -1297,6 +1395,10 @@ button.adv.fb[disabled]{color:var(--muted);border-color:var(--line);opacity:.6}
 .vadv.rec{color:#7bd88f}.vadv.caution{color:#ffb000}.vadv.ok{color:#9ab}.vadv.neutral{color:#888}
 .vbuildbtn{margin-top:.5rem;padding:.35rem .8rem;border-radius:6px;border:1px solid #7a4dff;background:#2a2350;color:#fff;font-size:.78rem;cursor:pointer}
 .vbuildbtn:disabled{opacity:.5;cursor:default}
+#resumebar{margin:.3rem 0}
+.resumebtn{padding:.35rem .8rem;border-radius:6px;border:1px solid #caa15a;background:#3a2f12;color:#f0d49a;font-size:.8rem;cursor:pointer}
+.resumebtn:disabled{opacity:.6;cursor:default}
+.resumenote{font-size:.66rem;color:var(--dim,#8a9a8a);margin-left:.5rem}
 .vlink{display:inline-flex;align-items:center;gap:.25rem;margin-right:.3rem}
 .vlink.chosen .pvw{color:#7bd88f;font-weight:700}
 .chosenbadge{color:#7bd88f;font-size:.66rem}
@@ -1309,6 +1411,7 @@ button.adv.fb[disabled]{color:var(--muted);border-color:var(--line);opacity:.6}
   <button class="ghost">Report ⚑</button>
 </form>
 <div id="studioreports" class="docs"></div>
+<div id="resumebar"></div>
 <p class="stats" id="stats"></p>
 <div class="card"><h2>Step 1 — New client</h2>
 <form class="new" onsubmit="return newClient(event)">
@@ -1533,6 +1636,8 @@ async function load(){
     `active scrapes ${d.running}/${d.max} · queued ${d.queued} · archived projects ${d.archived}`;
   renderNeeds(d.decisions||[], d.incidents||[]);
   renderVersion(d.version||{});
+  const rb=document.getElementById('resumebar');
+  if(rb) rb.innerHTML = d.resumable_builds ? `<button class="resumebtn" onclick="resumeAll(this)">↻ Resume ${d.resumable_builds} paused/failed build${d.resumable_builds>1?'s':''}</button> <span class="resumenote">re-queues paused (budget/rate) + failed builds; paced so it won't re-blow the limit</span>` : '';
   const sr=document.getElementById('studioreports');
   if(sr) sr.innerHTML=(d.studio_reports&&d.studio_reports.length)?`<span class="mono-label">studio reports${newDot('__studio__',d.studio_reports)}</span> `+d.studio_reports.slice(0,8).map(r=>`<button class="docbtn" onclick="openReport('__studio__','${r.file}','${d.studio_reports[0].file}')" title="${esc(r.summary)}">${esc(r.kind)} · ${r.ts}</button>`).join(' '):'';
   reconcileList(d.clients);
@@ -1634,6 +1739,14 @@ async function processEdits(slug){
   const r=await api('/api/process-edits',{slug});
   if(r.error){ alert('Process edits: '+r.error); }
   else { alert('Processing PENDING edits for '+slug+' — watch the row log. Each edit is implemented, then the site builds and the preview URL refreshes.'); load(); }
+}
+async function resumeAll(btn){
+  if(btn){ btn.disabled=true; btn.textContent='↻ resuming…'; }
+  const r=await api('/api/resume-all',{});
+  if(r.error){ alert('Resume: '+r.error); }
+  else { const nv=(r.versions||[]).length, no=(r.overhauls||[]).length;
+    alert('Resuming '+nv+' multi-version build(s)'+(no?(' + '+no+' creative overhaul(s)'):'')+'. Paced by the concurrency cap so the budget can\\'t be re-blown — watch the rows as each builds + publishes.'); }
+  load();
 }
 function cp(t){ navigator.clipboard&&navigator.clipboard.writeText(t); }
 function renderNeeds(decs, incs){
@@ -1829,6 +1942,7 @@ class H(BaseHTTPRequestHandler):
                                    "ttyd_url": TTYD_URL, "decisions": list_open_decisions(),
                                    "incidents": list_open_incidents(),
                                    "version": version_info(),
+                                   "resumable_builds": resumable_build_count(),
                                    "studio_reports": list_reports(STUDIO_KEY)}), "application/json")
         elif path == "/api/chat":
             q = parse_qs(urlparse(self.path).query)
@@ -1954,6 +2068,38 @@ class H(BaseHTTPRequestHandler):
             bump(cdir, msg=f"PROCESS EDITS started ({pending_edits_count(slug)} pending)")
             threading.Thread(target=run_advance, args=(slug, cmd, "process edits", "process_edits_failed"), daemon=True).start()
             return self._send(json.dumps({"ok": True}), "application/json")
+        elif path == "/api/resume-all":
+            # Studio-level "resume all paused builds": reset terminal build-failed + paused versions to
+            # queued, re-fire creative overhauls that paused/failed on budget, then kick the reaper. The
+            # CLAUDE_SEM cap paces the relaunch so it can't re-blow the budget. (The reaper also does this
+            # automatically every ~20s for transient pauses; this is the explicit, all-at-once button.)
+            resumed_versions, resumed_overhauls = [], []
+            for cdir in sorted(CLIENTS.iterdir()):
+                if not cdir.is_dir(): continue
+                slug = cdir.name
+                st = read_status(cdir); changed = False
+                for v in st.get("versions", []):
+                    if v.get("status") in ("build-failed", "paused") and not v.get("preview_url"):
+                        v["status"] = "queued"; changed = True
+                if any(v.get("status") in ("queued", "paused", "built", "publish-failed", "building")
+                       for v in st.get("versions", [])):
+                    resumed_versions.append(slug)
+                refire = st.get("overhaul_failed") or (st.get("paused") and "creative" in (st.get("paused_kind") or ""))
+                for k in ("paused", "paused_kind", "overhaul_failed"):
+                    if st.pop(k, None) is not None: changed = True
+                if changed: write_status(cdir, st)
+                if refire and slug not in TASKS and not claude_job_running(slug):
+                    with TASK_LOCK:
+                        if slug not in TASKS:
+                            TASKS[slug] = {"kind": "creative (resume)", "label": "resume creative", "started": now(), "tail": [], "proc": None}
+                            im = read_status(cdir).get("overhaul_input", "claude")
+                            threading.Thread(target=run_advance,
+                                             args=(slug, overhaul_runbook(slug, im), "creative/wow build", "overhaul_failed"),
+                                             daemon=True).start()
+                            resumed_overhauls.append(slug)
+            reap_version_builds()   # pick up the reset queues now (paced by CLAUDE_SEM)
+            return self._send(json.dumps({"ok": True, "versions": resumed_versions,
+                                          "overhauls": resumed_overhauls}), "application/json")
         elif path == "/api/full-build":
             slug = slugify(d.get("slug", ""))
             cdir = CLIENTS / slug
@@ -2245,6 +2391,7 @@ if __name__ == "__main__":
     CLIENTS.mkdir(exist_ok=True)
     reap_orphans()
     threading.Thread(target=worker, daemon=True).start()
+    threading.Thread(target=version_reaper_loop, daemon=True).start()   # restart-safe multi-version recovery
     scope = "PUBLIC (token required)" if HOST not in ("127.0.0.1", "localhost") else "local"
     print(f"Web Studio [{scope}] → http://{HOST}:{PORT}"
           + (f"/?key={TOKEN}" if TOKEN else "") + f"   · {MAX_SCRAPES} concurrent scrapes")
