@@ -253,8 +253,12 @@ a staged file is never wiped, the same architectural guarantee as the main list'
 
 Flow + endpoints (all JSON, studio-authed):
 - **New client from export** — `POST /api/import/new` `{name, platform: etsy|ebay, owner: self|client}`
-  → `new_import_client()` scaffolds the standard `clients/<slug>/` and records provenance in
-  `status.json` `catalog: {source: "<platform>-export", owner}`, stage `import-pending`.
+  → `new_import_client()` scaffolds the standard `clients/<slug>/`, records provenance in
+  `status.json` `catalog: {source: "<platform>-export", owner}` (stage `import-pending`), and
+  auto-authors the BINDING design spec `02-intake/specs/marketplace-creative-build.md`
+  (`marketplace_design_spec()` — creative mode + the "against blocky outlines" guardrail +
+  category-true visual world + the full ecommerce backend at the final build; `spec-id`/`status:
+  BINDING` so it unlocks the backend configurator).
 - **Listings CSV** — `POST /api/import/upload-csv` `{slug, filename, content}` saves the export to
   `02-intake/marketplace-export.csv` and runs the importer
   (`.claude/skills/site-baseline/scripts/marketplace_import.py`): auto-detects Etsy vs eBay from the
@@ -267,11 +271,19 @@ Flow + endpoints (all JSON, studio-authed):
   M with matched photos, products-without-photo and unmatched-photos flagged both directions, plus the
   owner=client provenance items. Photos pair by **SKU / listing-id / filename, never order/index**
   (the §1a / catalog-correspondence rule), one photo per product.
-- **Build** — `POST /api/import/build` flips the client to `baseline-ready`. From there it is the
-  EXACT scraped-client track: `worker()` auto-runs the intake pack (census → redesign plan → concept
-  boards from the imported catalog), then the human picks design mode(s) at the boards **build gate**
-  (the existing multi-select → `/api/build-versions`). `version_build_runbook` (idx 0) assembles from
-  the import when no `03-site` exists yet (sourcing `catalog-draft.json` per §1a).
+- **Build (creative prototype → edits → final backend)** — `POST /api/import/build` sets
+  `design_mode: creative` and runs `import_build_runbook()` (via `run_advance`, so PUBLISH-ALWAYS
+  fires): assemble the ecommerce-catalog archetype from the imported catalog (§1a) with the
+  `import_creative_clause()` — full creative craft, the visual world derived from THIS shop's own
+  products (NOT the orchid/greenhouse default), the **no-blocky-outlines** guardrail, parity floor +
+  every imported photo, verification loop — then publish. That produces `03-site` + a preview and
+  lands the client at `prototype`. From there it is an ordinary prototype-stage ecommerce client:
+  **(2) edits** via the ledger (Command 5 / "Process edits"), then **(3) the final backend build** —
+  Configure backend (BINDING config) → **Full build — from this prototype** (`full_build_action`
+  from-prototype): Phases 2–4 = Supabase + Stripe + Resend + storefront integrations, on rehearsal
+  TEST creds first (cutover refused while any `# REHEARSAL` credential is in use). The boards/
+  multi-version gate stays available on the dashboard if a non-creative direction is wanted;
+  `version_build_runbook` (idx 0) also assembles from the import when no `03-site` exists yet.
 - **Provenance + boundary** — for `owner=client` the page surfaces D-2.7.E1/E2 + D-2.4.9 (recorded in
   the deliverables request when the pipeline runs); the boundary banner is always shown:
   owner-authorized own-shop export only, never a scraper for other sellers, never bot-scraping

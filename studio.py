@@ -211,6 +211,10 @@ def new_import_client(name, platform, owner):
     st.setdefault("log", []).append(
         f"{now()} marketplace-import client created — source={platform}-export, owner={owner}")
     write_status(cdir, st)
+    # auto-author the BINDING design spec (creative + no-blocky-outlines + ecommerce backend)
+    (cdir / "02-intake" / "specs").mkdir(parents=True, exist_ok=True)
+    (cdir / "02-intake" / "specs" / "marketplace-creative-build.md").write_text(
+        marketplace_design_spec(slug, platform, owner))
     return slug, None
 
 def marketplace_summary(cdir):
@@ -254,6 +258,109 @@ def save_import_photos(cdir, filename, raw):
     base = Path(filename).name
     (assets / base).write_bytes(raw)
     return [base], None
+
+def marketplace_design_spec(slug, platform, owner):
+    """The BINDING build order auto-authored for a marketplace-import client: creative design mode,
+    the 'against blocky outlines' guardrail, a category-true (not botanical-by-default) visual world,
+    and the full ecommerce backend at the final build. Carries spec-id + status:BINDING so it unlocks
+    the backend configurator (has_binding_spec)."""
+    pname = IMPORT_PLATFORMS.get(platform, platform)
+    return f"""---
+spec-id: WS-SPEC-{slug.upper().replace('-', '_')}-MKT-001
+version: 1
+status: BINDING
+client: {slug}
+archetype: ecommerce-catalog
+generated: {now()[:10]}
+---
+
+# Build spec — {pname} shop migration ({slug})
+
+BINDING build order (CLAUDE.md "Build specs"): overrides archetype/playbook defaults where they
+conflict; never overrides the studio Hard rules.
+
+## Catalog source
+The catalog is the **owner-authorized {platform} export** (SYSTEM.md §1a), already imported to
+`01-baseline/catalog-draft.json` (DRAFT). Build the FULL catalog from it: one product per record,
+each product's photo paired by SKU/listing-id/filename (NEVER order/index). Exported prices,
+descriptions, and quantities are DRAFT until the owner confirms. Photo-less products get a clean
+type-led card — never a borrowed or invented image. Owner: {owner}.
+
+## Design — CREATIVE, against blocky outlines [BINDING]
+Build in **creative design mode** (the maximal swing, ECOMMERCE-GUIDELINES §5.9: disciplined graphic
+richness + smooth modern interactivity + an original generated graphic system + ONE signature motion
+moment).
+
+**Hard design guardrail — NO blocky outlines.** This storefront must NOT look like boxed template
+commerce:
+- No hard-bordered boxy cards; no outlined rectangular section blocks; no grid of bordered boxes; no
+  1px-outline "containers" as the organising idea of the layout.
+- Instead: full-bleed imagery, borderless cards separated by SPACE / soft shadow / typographic
+  rhythm, editorial asymmetry, flowing/organic section transitions, generous negative space.
+- A blocky bordered-box layout is a BUILD FAILURE to fix before reporting, not a style note.
+
+**Category-true, NOT botanical-by-default.** Derive the visual world (palette, motif family, type
+pairing, signature element) from THIS shop's OWN products — its materials, craft, and subject as
+seen in the imported catalog. Do NOT impose the studio's botanical/greenhouse default unless the
+shop genuinely sells plants. Name the concept and where its brand moment lives.
+
+## Prototype → edits → final build
+1. **Prototype** (Command 1): a complete, honest creative storefront from the imported catalog,
+   published as a preview. Parity floor = the imported catalog + standard storefront features
+   (browse, product pages, search/filter, cart entry).
+2. **Edits** via the edit ledger (Command 5) on the published prototype.
+3. **Final build** — the full commerce backend per BACKEND.md + the BINDING backend-config:
+   Phases 2–4 — Supabase (catalog/admin/accounts), Stripe checkout (server-verified prices), Resend
+   transactional email — plus storefront integrations (search, forms→inbox, GA4, consent). Reached
+   via Configure backend → Full build (from this prototype); rehearsal TEST creds first, cutover
+   refused while any # REHEARSAL credential is in use.
+"""
+
+def import_creative_clause():
+    """Category-NEUTRAL creative directive for marketplace imports (the orchid-specific creative_clause
+    is wrong for an arbitrary Etsy/eBay shop). Same craft, but the visual world is derived from the
+    shop's own products, plus the binding 'no blocky outlines' guardrail."""
+    return ("DESIGN MODE = CREATIVE (the maximal swing, ECOMMERCE-GUIDELINES §5.9): build the storefront "
+            "with full creative craft = (1) disciplined graphic richness (editorial art direction, "
+            "oversized type as artwork, MUTED full-bleed colour interludes, layered composition); "
+            "(2) smooth modern interactivity — section-based scroll narrative, scroll-reveals "
+            "(IntersectionObserver + CSS, no heavy library), hover category tiles as the 'shop by' entry, "
+            "slide-out drawers (cart/filters/mobile-nav, transforms, no reloads), a condensing sticky "
+            "header, and ONE signature motion moment; motion SERVES navigation; prefers-reduced-motion "
+            "honoured absolutely; (3) an ORIGINAL generated graphic system (code-drawn SVG motifs + "
+            "atmospheric textures + a connective family of dividers/ornaments) — muted, aria-hidden, "
+            "never blocking first paint. HONESTY BOUNDARY (HARD): generated art is DECORATION ONLY — "
+            "never a stand-in for a real product image; show the real photo or an honest type-led "
+            "fallback, never an invented product; all art ORIGINAL (drawn as code), never traced/copied. "
+            "DERIVE THE VISUAL WORLD FROM THIS SHOP'S OWN PRODUCTS (materials / craft / subject in the "
+            "imported catalog) — do NOT default to botanical/greenhouse motifs unless the shop sells "
+            "plants. HARD GUARDRAIL — NO BLOCKY OUTLINES: no hard-bordered boxy cards, no outlined "
+            "rectangular section blocks, no grid-of-bordered-boxes; use full-bleed imagery, borderless "
+            "cards separated by space/shadow/typographic rhythm, editorial asymmetry, organic section "
+            "transitions, generous negative space — a blocky bordered-box layout is a build failure. "
+            "INVARIANTS: the parity floor stays (every imported product + standard storefront feature); "
+            "carry EVERY imported photo (re-import the records) — expression changes HOW a photo is "
+            "shown, never WHETHER; photography stays resolution-limited (NEVER upscaled; type-led "
+            "fallback where a product has no usable photo); every studio + archetype Hard rule stays; "
+            "the swing is EXPRESSION-ONLY. Pass the full Design QA Gate and name the brand moment.")
+
+def import_build_runbook(slug):
+    return (f"CREATIVE PROTOTYPE for {slug} — a marketplace-import client (its shop lives on Etsy/eBay; "
+            f"there is NO scrape). Read EVERY binding spec in clients/{slug}/02-intake/specs/ FIRST — the "
+            f"marketplace build spec is authoritative. Assemble the prototype per CLAUDE.md Command 1: copy "
+            f"the ecommerce-catalog archetype into clients/{slug}/03-site (cp -R; never build in templates/), "
+            f"then build the FULL catalog from the owner-authorized import at "
+            f"clients/{slug}/01-baseline/catalog-draft.json (SYSTEM.md §1a) — one product per record, "
+            f"DRAFT-labelled, each photo paired by SKU/listing-id/filename (NEVER order/index), photo-less "
+            f"products as clean type-led cards. {import_creative_clause()} "
+            f"Author clients/{slug}/01-baseline/parity-checklist.md from the imported catalog + standard "
+            f"storefront features (each row a concrete dist/ verification method), then RUN THE VERIFICATION "
+            f"LOOP against clients/{slug}/03-site/dist — INCLUDING an 'every imported photo present' row AND "
+            f"a 'no blocky bordered-box layout' row — FAIL and iterate, never ship incomplete. Verify with "
+            f"npm install && npm run build --prefix clients/{slug}/03-site. Set stage=prototype (then "
+            f"awaiting-owner) when it passes. On any human-judgment fork, open a decision (resume_job set) "
+            f"and STOP. PUBLISH-ALWAYS after the loop passes; write the build report and report the concept, "
+            f"the brand moment, the no-blocky-outlines verdict, and the parity-checklist results.")
 
 def start_scrape(slug, domain):
     cdir = CLIENTS / slug
@@ -2180,18 +2287,20 @@ async function refreshLive(){
   }
   const ready = sm && sm.ok && sm.products>0;
   if(s.preview_url){ html+=`<div class="gate">Preview live: <a href="${esc(s.preview_url)}" target="_blank" rel="noopener">${esc(s.preview_url)} ↗</a></div>`; }
-  if(s.stage==='import-pending'){
-    html+=`<button class="go" ${ready?'':'disabled'} onclick="startBuild()">Start build pipeline ▶</button>
-      <div class="gate">Runs the pipeline from the imported catalog — census → redesign plan → concept boards — exactly like a scraped client. You then pick design mode(s) at the <b>build gate</b> on the dashboard (standard · image-led · creative, one preview URL each).</div>`;
+  if(s.stage==='import-pending' && !s.busy){
+    html+=`<button class="go" ${ready?'':'disabled'} onclick="startBuild()">Build creative prototype ▶</button>
+      <div class="gate">Builds a complete <b>creative</b> ecommerce storefront from your imported catalog — full creative craft, <b>no blocky outlines</b>, the look derived from your own products (never a generic boxed template). Publishes a preview to review and send edits on. The full commerce backend (checkout, accounts, transactional email + integrations) comes after, via <b>Configure backend → Full build</b> on the <a href="/">dashboard</a>.</div>`;
+  } else if(s.busy){
+    html+=`<div class="gate">● Building the creative prototype… watch the row on the <a href="/">dashboard</a>. When it lands you can process edits and run the final backend build there.</div>`;
   } else {
-    html+=`<div class="gate">Pipeline started (stage: <b>${esc(s.stage)}</b>). Concept boards generate from your catalog; pick design mode(s) at the build gate on the <a href="/">dashboard</a>.</div>`;
+    html+=`<div class="gate">Prototype stage: <b>${esc(s.stage)}</b>. Process edits, then run the final backend build (Configure backend → Full build — from this prototype) on the <a href="/">dashboard</a>.</div>`;
   }
   el.innerHTML=html;
 }
 async function startBuild(){
   const r=await api('/api/import/build',{slug:SEL});
   if(r.error){ alert('Cannot start: '+r.error); return; }
-  alert('Build pipeline started for '+SEL+' from '+r.products+' imported products.\\nCensus, redesign plan, and concept boards are generating. Pick your design mode(s) at the build gate on the dashboard.');
+  alert('Creative prototype build started for '+SEL+' from '+r.products+' imported products.\\nCreative mode, no blocky outlines, look derived from your products. Watch the row on the dashboard; when the preview lands you can process edits and run the final backend build there.');
   refreshLive(); loadPicker();
 }
 document.getElementById('boundary').textContent = "Owner-authorized own-shop export only — mine OR a client's. The seller runs the export from their own Shop Manager / Seller Hub (or grants access). This is NEVER a scraper for other sellers' listings, and we never bot-scrape eBay/Etsy.";
@@ -2393,26 +2502,35 @@ class H(BaseHTTPRequestHandler):
                            + (f" (+{len(saved)-6} more)" if len(saved) > 6 else ""))
             return self._send(json.dumps({"ok": True, "received": fname, "saved": saved}), "application/json")
         elif path == "/api/import/build":
-            # Kick off the pipeline from the imported catalog — exactly the scraped-client track:
-            # flip to baseline-ready so the worker auto-runs the intake pack (census -> redesign plan
-            # -> concept boards), then the human picks design mode(s) at the boards build gate.
+            # Build a CREATIVE ecommerce prototype straight from the imported catalog (the marketplace
+            # design spec mandates creative + no-blocky-outlines). Produces 03-site + a published
+            # preview; from there the client is an ordinary prototype-stage ecommerce client — edits and
+            # the final backend build (Configure backend -> Full build) apply on the dashboard.
             slug = slugify(d.get("slug", "")); cdir = CLIENTS / slug
             if not cdir.exists():
                 return self._send(json.dumps({"error": "no such client"}), "application/json", 404)
             summary = marketplace_summary(cdir)
             if not summary.get("ok") or summary.get("products", 0) < 1:
                 return self._send(json.dumps({"error": "import a CSV with at least one product first"}), "application/json", 400)
-            st = read_status(cdir)
-            cat = st.get("catalog", {}) or {}
-            st["stage"] = "baseline-ready"
-            st.setdefault("log", []).append(
-                f"{now()} BUILD PIPELINE started from marketplace import "
-                f"({summary['products']} products, {summary['with_photo']} with photos, "
-                f"source={cat.get('source','')}, owner={cat.get('owner','self')}) — intake pack will "
-                f"generate census/redesign-plan/concept boards; pick design mode(s) at the build gate")
-            write_status(cdir, st)
-            return self._send(json.dumps({"ok": True, "stage": "baseline-ready",
-                                          "products": summary["products"]}), "application/json")
+            cat = read_status(cdir).get("catalog", {}) or {}
+            specf = cdir / "02-intake" / "specs" / "marketplace-creative-build.md"
+            if not specf.exists():    # defensive: re-author for clients created before this existed
+                platform = (cat.get("source", "") or "etsy-export").replace("-export", "") or "etsy"
+                specf.write_text(marketplace_design_spec(slug, platform, cat.get("owner", "self")))
+            set_design_mode(cdir, "creative", "claude")
+            with TASK_LOCK:
+                if slug in TASKS:
+                    return self._send(json.dumps({"error": "a Claude task is already running for this client"}), "application/json", 409)
+                TASKS[slug] = {"kind": "creative prototype", "label": "creative prototype (marketplace import)",
+                               "started": now(), "tail": [], "proc": None}
+            bump(cdir, msg=f"CREATIVE PROTOTYPE build started from marketplace import "
+                           f"({summary['products']} products, {summary['with_photo']} with photos) — "
+                           f"creative mode, against blocky outlines")
+            threading.Thread(target=run_advance,
+                             args=(slug, import_build_runbook(slug), "creative prototype", "import_build_failed"),
+                             daemon=True).start()
+            return self._send(json.dumps({"ok": True, "products": summary["products"],
+                                          "design_mode": "creative"}), "application/json")
         elif path == "/api/add-edit":
             slug = slugify(d.get("slug", ""))
             ok, res = create_edit(slug, d.get("text", ""), "typed")
