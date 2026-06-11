@@ -57,8 +57,13 @@ TASK_LOCK = threading.Lock()
 # ~15 clients × 2-version builds + overhauls fired at once, exhausting the Claude monthly spend
 # limit, after which every headless job exited 1. The semaphore paces ALL claude -p spawns so the
 # studio can never blow the budget (or overload the API) in one wave. Raise via MAX_CLAUDE_JOBS.
-MAX_CLAUDE_JOBS = int(os.environ.get("MAX_CLAUDE_JOBS", "2"))
+MAX_CLAUDE_JOBS = int(os.environ.get("MAX_CLAUDE_JOBS", "3"))
 CLAUDE_SEM = threading.Semaphore(MAX_CLAUDE_JOBS)
+# Reserve ≥1 slot for INTERACTIVE work (edits / advance / chat) so a quick user edit never starves
+# behind the big background version-build backlog (the "edits not working" symptom — they were just
+# queued for hours). Background BUILDS additionally take BG_SEM (= cap-1); interactive jobs take only
+# CLAUDE_SEM, so there is always a free lane for them.
+BG_SEM = threading.Semaphore(max(1, MAX_CLAUDE_JOBS - 1))
 # Transient / EXTERNAL failure signatures — budget, rate, overload. A job that dies on one of these
 # didn't fail because of bad code; it's PAUSED (resumable), not build-failed (terminal).
 TRANSIENT_MARKERS = ("spend limit", "usage limit", "rate limit", "rate_limit", "overloaded",
@@ -398,6 +403,17 @@ def _set_version_status(cdir, idx, status):
     for v in st.get("versions", []):
         if v.get("idx") == idx: v["status"] = status
     write_status(cdir, st)
+def ensure_pages_project(project):
+    """`wrangler pages deploy` does NOT auto-create a Pages project, and the -v2/-v3 projects are
+    never created anywhere else (only the base ws-<slug> is, by the concept-boards step) — so every
+    v2 deploy was failing 'project not found'. Create it on demand; a pre-existing project just
+    returns a harmless error we ignore (idempotent)."""
+    try:
+        subprocess.run(["wrangler", "pages", "project", "create", project,
+                        "--production-branch", "main"],
+                       cwd=str(ROOT), capture_output=True, text=True, timeout=120)
+    except Exception:
+        pass
 def publish_version(slug, idx, dryrun=None):
     """Deploy version <idx>'s built site to ITS OWN project and record it in status.json versions[].
     Generalises publish_preview across projects (per-version isolated). dryrun (or env
@@ -414,6 +430,8 @@ def publish_version(slug, idx, dryrun=None):
     if dryrun:
         _record_version_publish(cdir, idx, base, "(dry-run, no wrangler)")
         return base
+    if idx >= 1:
+        ensure_pages_project(project)          # v2/v3 projects aren't created anywhere else; deploy won't auto-create
     try:
         proc = subprocess.run(["wrangler", "pages", "deploy", str(dist),
                                "--project-name", project, "--commit-dirty=true"],
@@ -465,10 +483,11 @@ def version_build_runbook(slug, idx, mode):
             f"Build with: npm run build --prefix {sd}. Do NOT deploy — studio.py owns the per-version deploy. "
             f"On any human-judgment fork, open a decision and STOP.")
 def _claude_p_build(slug, command, kind):
-    """One headless `claude -p` build, NO auto-publish (the multi-version driver owns per-version
-    deploy). Paced by CLAUDE_SEM (global concurrency cap). Returns (exit_code, tail_text)."""
+    """One headless `claude -p` version build. Background work: takes BG_SEM (= cap-1) AND CLAUDE_SEM,
+    so builds can never consume every slot — an interactive edit/advance always has a free lane.
+    NO auto-publish (the driver owns per-version deploy). Returns (exit_code, tail_text)."""
     cdir = CLIENTS / slug
-    with CLAUDE_SEM:                            # global cap — never burst the budget
+    with BG_SEM, CLAUDE_SEM:                    # background sub-cap + global cap (reserve a lane for edits)
         bump(cdir, msg=f"{kind} started")
         try:
             proc = subprocess.Popen([CLAUDE_BIN, "-p", command], cwd=str(ROOT),
