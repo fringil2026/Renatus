@@ -59,6 +59,64 @@ become a D-2.7.4 photography ask, never invented/upscaled images.
 
 ---
 
+## 1a · Marketplace-export intake (owner-authorized — an ALTERNATIVE catalog source)
+For a shop that lives on a **marketplace** (Etsy / eBay) rather than its own crawlable site, the
+catalog evidence comes from the **owner's own export**, not the scrape ladder. This is a parallel
+source that feeds the EXACT same downstream flow (census → redesign plan → boards → build); it
+stands in for §1 as the catalog's origin of truth.
+
+**WHO it covers (the authorized model).** A seller's **OWN** shop, WITH that seller's authorization
+— **mine OR a client's**. The mechanism is identical either way: an Etsy/eBay CSV listings export +
+the owner's own product photos, imported as **DRAFT** product records. Client-shop migrations add
+PROVENANCE capture (below); the import logic does not otherwise change.
+
+**The mechanism.**
+1. The owner runs the export from their OWN marketplace back-office (Etsy: Shop Manager → Settings →
+   Options → Download Data → "Currently for sale listings"; eBay: Seller Hub → Listings → download
+   active listings) — **or grants us access to run it.** We do **not** reach their marketplace
+   account by scraping. The CSV + a photos folder land in `02-intake/assets/`.
+2. **CSV → product-record mapping** (same record shape the scrape extractor emits → `catalog-draft.json`,
+   one record per listing, each carrying `source_listing_id`/`source_sku` as its provenance key):
+
+   | Record field | Etsy export column | eBay export column |
+   |---|---|---|
+   | `name` | `TITLE` | `Title` |
+   | `sku` | `SKU` | `Custom label (SKU)` |
+   | `listing_id` | `(listing URL / id)` | `Item number` |
+   | `price` (DRAFT) | `PRICE` | `Start price` / `Buy It Now price` |
+   | `currency` | `CURRENCY_CODE` | `Currency` |
+   | `availability` (DRAFT) | `QUANTITY` | `Available quantity` |
+   | `description` (DRAFT) | `DESCRIPTION` | `Description` |
+   | `category`/`genus` | `(tags / section)` | `Category` |
+   | `photo` | filenames in `IMAGE1..N` / matched in assets | photo URLs / matched in assets |
+
+3. **Photo correspondence [HARD] — same rule as the scrape (GUIDELINES §4).** A listing's photo is
+   matched from `02-intake/assets/` by its **SKU / listing-id / filename**, NEVER by array order or
+   index. Text and photo stay together as they appeared on the SAME listing; pooling photos and
+   re-attaching by order silently produces a right-name/wrong-photo catalog. A listing with no usable
+   photo gets a clean type-led card, never a borrowed image. Run the same correspondence verifier +
+   human QA sheet over the imported set.
+4. **Everything imports DRAFT.** Prices, availability, descriptions are REAL but unconfirmed
+   (owner facts pending sign-off) — labelled DRAFT, never silently trusted, never fabricated where
+   absent. From here it is the ordinary pipeline: feature census → redesign plan → concept boards →
+   build, run from the imported catalog.
+
+**Provenance recorded (explicit, every import).** `status.json` carries
+`catalog: { source: "etsy-export" | "ebay-export", owner: "self" | "client" }` (mirrored to
+`brief.yaml` `catalogue.source`). For **client shops** (`owner: "client"`) the authorization is also
+captured in the deliverables request: **§2.7 D-2.7.E1/E2** (client-provided export + ownership
+authorization, BLOCKING) and **§2.4 D-2.4.9** (product-photo rights / source confirmation,
+BLOCKING-at-launch). So a client-shop migration provably records that the CLIENT authorized and
+supplied the export and owns/authorized the photos.
+
+**BOUNDARY [HARD].** Import is for a **seller's OWN shop with that seller's authorization — mine OR a
+client's**. It is **NEVER** a scraper for other sellers' listings, and we **never bot-scrape
+eBay/Etsy** (against their terms). The only inputs are an **owner-authorized export** + the owner's
+own photos; the client runs the export from their own Shop Manager / Seller Hub or grants access —
+we do not access their marketplace account. (Restated in ECOMMERCE-GUIDELINES §3.)
+
+---
+
 ## 2 · The parity verification loop (CLAUDE.md "Verification loop — binding")
 The feature census is a binding CHECKLIST; no prototype returns until every line is verified or
 honestly blocked.
@@ -185,6 +243,40 @@ A mass build-failure taught three lessons; each has a lasting guard:
   + `paused` versions to `queued`, re-fires budget-killed creative overhauls, and kicks the reaper —
   all paced by `CLAUDE_SEM`.
 
+### 3e · Marketplace Import page (build from an owner-authorized export, not a scrape)
+A dedicated dashboard route — **`GET /import`** (linked from Step 1 on the main dashboard) — for the
+**marketplace-export intake path** (§1a): a shop on Etsy/eBay with no crawlable site of its own.
+Rendered in the same dashboard app (its own `IMPORT_PAGE`, same styling), entirely upload-driven.
+Depends on the resolved upload / state-preservation fix (§3a/§3b): the upload **forms are built once
+and never re-rendered by the 4 s poll** — only a data-only `#live` zone (read from disk) refreshes — so
+a staged file is never wiped, the same architectural guarantee as the main list's `interacting()` guard.
+
+Flow + endpoints (all JSON, studio-authed):
+- **New client from export** — `POST /api/import/new` `{name, platform: etsy|ebay, owner: self|client}`
+  → `new_import_client()` scaffolds the standard `clients/<slug>/` and records provenance in
+  `status.json` `catalog: {source: "<platform>-export", owner}`, stage `import-pending`.
+- **Listings CSV** — `POST /api/import/upload-csv` `{slug, filename, content}` saves the export to
+  `02-intake/marketplace-export.csv` and runs the importer
+  (`.claude/skills/site-baseline/scripts/marketplace_import.py`): auto-detects Etsy vs eBay from the
+  headers, maps columns → DRAFT product records (name, description, price, qty, tags/category, SKU,
+  listing-id, variants) → `01-baseline/catalog-draft.json`.
+- **Photos** — `POST /api/import/upload-photo` `{slug, filename, b64}` saves into `02-intake/assets/`
+  (a `.zip` is unpacked, image members only); base64 so binaries ride the same JSON channel.
+- **Preview** — `GET /api/import/state?slug=` re-runs the importer over CSV + current assets every call
+  (so it is correct after refresh/restart and picks up photos uploaded after the CSV): N products,
+  M with matched photos, products-without-photo and unmatched-photos flagged both directions, plus the
+  owner=client provenance items. Photos pair by **SKU / listing-id / filename, never order/index**
+  (the §1a / catalog-correspondence rule), one photo per product.
+- **Build** — `POST /api/import/build` flips the client to `baseline-ready`. From there it is the
+  EXACT scraped-client track: `worker()` auto-runs the intake pack (census → redesign plan → concept
+  boards from the imported catalog), then the human picks design mode(s) at the boards **build gate**
+  (the existing multi-select → `/api/build-versions`). `version_build_runbook` (idx 0) assembles from
+  the import when no `03-site` exists yet (sourcing `catalog-draft.json` per §1a).
+- **Provenance + boundary** — for `owner=client` the page surfaces D-2.7.E1/E2 + D-2.4.9 (recorded in
+  the deliverables request when the pipeline runs); the boundary banner is always shown:
+  owner-authorized own-shop export only, never a scraper for other sellers, never bot-scraping
+  eBay/Etsy. The client row carries an `⤓ <source> · <owner>` badge. (Doctrine: §1a.)
+
 ## 4 · Concept boards (the visual concept decision)
 After the scrape, before any prototype, the human picks from real designs spanning a **creativity
 spectrum**, not documents. `.claude/skills/site-baseline/scripts/concept_boards.py` reads
@@ -278,6 +370,10 @@ timestamp + one-line summary; click to render; "new" dot since last opened) — 
 `list_reports()` / `/api/doc` serves `reports/`; studio reports surface in the header.
 
 ## Related systems (pointers)
+- **Marketplace-export intake** — §1a above: owner-authorized Etsy/eBay export as an alternative
+  catalog source (mine OR a client's own shop); never a scraper for other sellers (boundary in §1a +
+  GUIDELINES §3). Provenance: `status.json` `catalog.{source,owner}`; client-shop deliverables
+  D-2.7.E1/E2 + D-2.4.9.
 - **Findings & reports** — §6 above; CLAUDE.md "Findings & reports".
 - **Troubleshooting / incidents** — §5 above; CLAUDE.md "Troubleshooting workflow"; `incident-template.md`.
 - **Decision surfaces / inbox** — judgment moments become dashboard cards (CLAUDE.md "Decision surfaces").
