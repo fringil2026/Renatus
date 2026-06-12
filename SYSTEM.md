@@ -381,6 +381,58 @@ the file write. **Dashboard:** the row Documents panel has a Reports section (ne
 timestamp + one-line summary; click to render; "new" dot since last opened) — `studio.py`
 `list_reports()` / `/api/doc` serves `reports/`; studio reports surface in the header.
 
+## 7 · Outreach pipeline (prospecting: diagnose → DRAFT — sending is a later, separate layer)
+
+### 7a · The site-diagnostic engine (`.claude/skills/site-diagnostic/`)
+One URL → a trustworthy, two-axis, industry-aware REBUILD VERDICT. Split of labor:
+- **`scripts/diagnose.py`** (the measurable half): hardened-Playwright rendered capture (desktop
+  1440 + mobile 390 full-page screenshots, rendered HTML), bounded polite mini-crawl (reuses
+  `crawl.py`), PageSpeed Insights with 429-retry + local-load fallback, and every objective Axis-1
+  check — responsive verdict (viewport meta AND @media count AND measured 390px overflow; a
+  "not-responsive" claim requires the signals to AGREE), HTTPS posture, dated-tech tells (table
+  layout, Flash, jQuery era, pre-HTML5 doctype, dated generator meta, stale ©, fixed widths —
+  layout attributes only, gated on non-responsive), a11y basics (alt coverage, lang, labels, WCAG
+  contrast sampling that EXCLUDES text-over-images as unscorable), mixed content (LOADED resources
+  only, not links). Output: `diagnostic.json` where every finding carries its evidence string +
+  confidence, plus a 0–100 measurable score with per-component evidence.
+- **The model half (SKILL.md)**: industry classification FIRST → resolve the diagnostic standard
+  (existing archetype guidelines → existing playbook → GENERATE a new `playbooks/<industry>.md`
+  from `_TEMPLATE.md`, surfaced as a studio report for review — reused by all future prospects in
+  that industry; the standard used is always recorded). Then the judged Axis-1 rubric (five 1–5
+  dimensions on the screenshots, every score flagged OPINION with a visible-evidence reason),
+  Axis-2 completeness gaps vs the standard (absence claims downgraded on thin crawls), verdict
+  (strong-candidate / candidate / borderline / skip / unreachable / not-scorable), top-3
+  marketable problems (measurable lead; taste phrased softly).
+**Honesty rules are binding** (they feed emails to real owners): measurable claims verified-true,
+judged claims flagged opinion, never fabricate a deficiency, a challenge-page capture is
+NOT SCORABLE rather than judged. Artifacts: `outreach/prospects/<domain>/` (git-ignored).
+
+### 7b · The Outreach tab (`/outreach` on the dashboard)
+Upload-driven batch layer over the engine; **stops at DRAFTS — nothing is ever sent from here.**
+- **Upload** a Grata CSV/XLSX → company/website columns auto-inferred from headers (social-profile
+  URL columns excluded), the mapping is SHOWN before anything runs; rows dedup against the
+  masterfile (the source of truth for "who we've touched") and within the sheet; dead/missing URLs
+  are skipped gracefully. Each upload lays down `outreach/runs/<id>/run-state.json` — the resumable
+  artifact (filename-state thinking: state lives in the artifact, not memory).
+- **Runner**: sequential + paced (`OUTREACH_PACING_S`, default 20s between rows), one
+  `claude -p` site-diagnostic per pending row under BG_SEM+CLAUDE_SEM (same budget pacing as
+  builds), per-row timeout, Stop button (finishes the current row), Resume continues exactly where
+  it stopped; a transient (budget/rate) failure PAUSES the run rather than failing rows. Each row
+  job writes `outreach/prospects/<domain>/{report.md,result.json}`; the RUNNER is the single
+  writer of the two output files (the row contract is `result.json`).
+- **Two living output files** (downloadable from the tab): `outreach/masterfile.csv` — every
+  company ever processed (domain, company, date, industry, standard, verdict, score, top
+  problems, contact_status diagnosed/drafted — later: emailed) — and `outreach/drafted-emails.csv`
+  — one row per rebuild candidate (top-3 problems + drafted subject/body), the human review
+  surface. Append-only; dedup reads the masterfile.
+- Every finished run writes a studio report (findings convention). Per-prospect reports render in
+  the tab.
+- **Email drafts** are personalized from THAT site's diagnosed problems (measurable lead, taste
+  softened, no fabricated deficiencies, no spam patterns). **SENDING (not built) must add CAN-SPAM
+  compliance: unsubscribe mechanism + the studio's physical mailing address + accurate
+  From/subject — plus per-recipient suppression honoring the masterfile.** That belongs to the
+  future send layer, never to drafting.
+
 ## Related systems (pointers)
 - **Marketplace-export intake** — §1a above: owner-authorized Etsy/eBay export as an alternative
   catalog source (mine OR a client's own shop); never a scraper for other sellers (boundary in §1a +

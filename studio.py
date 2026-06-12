@@ -1630,6 +1630,7 @@ button.adv.fb[disabled]{color:var(--muted);border-color:var(--line);opacity:.6}
 <button>Start pipeline</button></form>
 <div style="margin-top:.7rem;font-family:var(--m);font-size:.72rem;color:var(--muted)">
   No website to scrape — a shop on Etsy/eBay? <a class="mplink" href="/import">Marketplace Import →</a>
+  &nbsp;·&nbsp; Prospecting: diagnose sites + draft emails — <a class="mplink" href="/outreach">Outreach →</a>
   <span style="color:var(--muted)">build from the owner's authorized export instead of a scrape.</span>
 </div>
 <div style="margin-top:.9rem">
@@ -2120,6 +2121,460 @@ function flash(form, msg){
 load(); setInterval(load, 4000);
 </script></body></html>"""
 
+# ---------------- Outreach pipeline (prospecting: spreadsheet -> diagnostics -> DRAFT emails) ----------------
+# Upload a Grata export -> per-row site-diagnostic (the site-diagnostic skill, one claude -p per
+# row, paced + resumable) -> two living output files. STOPS AT DRAFTS: nothing is ever sent from
+# here (sending — with the required unsubscribe + physical-address compliance — is a later layer).
+# The RUNNER owns masterfile.csv + drafted-emails.csv (single writer); each row job only writes
+# outreach/prospects/<domain>/ (result.json + report.md + capture). outreach/ is git-ignored.
+OUTREACH = ROOT / "outreach"
+OUTREACH_RUNS = OUTREACH / "runs"
+OUTREACH_PROSPECTS = OUTREACH / "prospects"
+OUTREACH_MASTER = OUTREACH / "masterfile.csv"
+OUTREACH_DRAFTS = OUTREACH / "drafted-emails.csv"
+OUTREACH_KEY = "__outreach__"
+OUTREACH_PACING_S = int(os.environ.get("OUTREACH_PACING_S", "20"))      # polite gap between rows
+OUTREACH_ROW_TIMEOUT_S = int(os.environ.get("OUTREACH_ROW_TIMEOUT_S", "1500"))
+OUTREACH_STOP = threading.Event()
+OUTREACH_LOCK = threading.Lock()
+
+MASTER_FIELDS = ["domain", "company", "url", "date_processed", "industry", "standard",
+                 "verdict", "score", "top_problems", "contact_status", "run_id"]
+DRAFT_FIELDS = ["company", "url", "domain", "industry", "problem_1", "problem_2", "problem_3",
+                "subject", "body", "run_id", "date"]
+
+def _read_csv_dicts(path):
+    import csv
+    if not path.exists():
+        return []
+    with path.open(newline="") as f:
+        return list(csv.DictReader(f))
+
+def _append_csv_row(path, fields, row):
+    import csv
+    path.parent.mkdir(parents=True, exist_ok=True)
+    new = not path.exists()
+    with path.open("a", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=fields, extrasaction="ignore")
+        if new:
+            w.writeheader()
+        w.writerow(row)
+
+def normalize_prospect_url(raw):
+    """-> (url, domain) or (None, None). Domain is the dedup key (lower, no www)."""
+    u = (raw or "").strip().strip('"').strip()
+    if not u or u.lower() in ("n/a", "none", "-"):
+        return None, None
+    if not re.match(r"^https?://", u, re.I):
+        u = "https://" + u
+    try:
+        host = urlparse(u).netloc.lower().split(":")[0]
+    except Exception:
+        return None, None
+    if "." not in host or " " in host:
+        return None, None
+    return u, host[4:] if host.startswith("www.") else host
+
+def infer_outreach_mapping(headers):
+    """Detect the company-name + website-URL columns of an arbitrary (Grata) export.
+    Social-profile URL columns are explicitly excluded from the website match."""
+    hl = [(h, (h or "").strip().lower()) for h in headers]
+    def pick(prefs, exclude=()):
+        for pref in prefs:
+            for h, low in hl:
+                if pref in low and not any(x in low for x in exclude):
+                    return h
+        return None
+    url_col = pick(["website", "web site", "domain", "homepage", "url"],
+                   exclude=("linkedin", "facebook", "twitter", "instagram", "grata", "crunchbase"))
+    company_col = pick(["company name", "company", "organization", "organisation", "account name",
+                        "business name", "name"], exclude=("contact", "first", "last", "owner", "file"))
+    return {"company_col": company_col, "url_col": url_col, "headers": headers,
+            "ok": bool(url_col), "note": "" if url_col else "no website/url column recognized — fix the sheet or rename the column"}
+
+def parse_outreach_sheet(fname, raw):
+    """CSV or XLSX bytes -> (headers, rows-as-dicts). Raises ValueError with a human reason."""
+    import csv, io
+    if fname.lower().endswith((".xlsx", ".xlsm")):
+        try:
+            import openpyxl
+        except ImportError:
+            raise ValueError("xlsx upload needs openpyxl (pip install openpyxl) — or upload CSV")
+        wb = openpyxl.load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
+        ws = wb.active
+        it = ws.iter_rows(values_only=True)
+        headers = [str(c).strip() if c is not None else "" for c in (next(it, None) or [])]
+        rows = [{headers[i]: ("" if c is None else str(c).strip()) for i, c in enumerate(r) if i < len(headers)}
+                for r in it if any(c not in (None, "") for c in r)]
+    else:
+        text = raw.decode("utf-8-sig", errors="replace")
+        try:
+            dialect = csv.Sniffer().sniff(text[:4000], delimiters=",;\t")
+        except Exception:
+            dialect = csv.excel
+        rd = csv.DictReader(io.StringIO(text), dialect=dialect)
+        headers = rd.fieldnames or []
+        rows = [r for r in rd if any((v or "").strip() for v in r.values())]
+    if not headers or not rows:
+        raise ValueError("no data rows found in the spreadsheet")
+    return headers, rows
+
+def outreach_run_file(run_id):
+    return OUTREACH_RUNS / run_id / "run-state.json"
+
+def read_outreach_run(run_id):
+    f = outreach_run_file(run_id)
+    return json.loads(f.read_text()) if f.exists() else None
+
+def write_outreach_run(state):
+    f = outreach_run_file(state["run_id"])
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text(json.dumps(state, indent=1))
+
+def create_outreach_run(fname, raw):
+    """Parse the upload, infer the column mapping, dedup against the masterfile AND within
+    the sheet, and lay down the resumable run-state artifact. Returns the state dict."""
+    headers, rows = parse_outreach_sheet(fname, raw)
+    mapping = infer_outreach_mapping(headers)
+    if not mapping["ok"]:
+        raise ValueError(mapping["note"])
+    master = {r.get("domain", ""): r for r in _read_csv_dicts(OUTREACH_MASTER)}
+    run_id = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    seen_in_sheet = {}
+    out_rows = []
+    for i, r in enumerate(rows, start=2):   # 2 = first data row of the sheet, for human cross-reference
+        company = (r.get(mapping["company_col"]) or "").strip() if mapping["company_col"] else ""
+        url, domain = normalize_prospect_url(r.get(mapping["url_col"]))
+        row = {"n": i, "company": company or (domain or "?"), "url": url or "", "domain": domain or "",
+               "status": "pending", "note": "", "verdict": ""}
+        if not url:
+            row["status"] = "skipped-no-url"
+            row["note"] = f"unusable URL: {(r.get(mapping['url_col']) or '')[:60]!r}"
+        elif domain in master:
+            m = master[domain]
+            row["status"] = "skipped-duplicate"
+            row["note"] = f"already in masterfile ({m.get('date_processed','?')}, {m.get('verdict','?')}, {m.get('contact_status','?')})"
+        elif domain in seen_in_sheet:
+            row["status"] = "skipped-duplicate"
+            row["note"] = f"duplicate of sheet row {seen_in_sheet[domain]}"
+        else:
+            seen_in_sheet[domain] = i
+        out_rows.append(row)
+    rdir = OUTREACH_RUNS / run_id
+    rdir.mkdir(parents=True, exist_ok=True)
+    (rdir / ("source-" + Path(fname).name)).write_bytes(raw)
+    state = {"run_id": run_id, "created": now(), "source_file": Path(fname).name,
+             "mapping": {k: mapping[k] for k in ("company_col", "url_col")},
+             "headers": headers, "status": "ready", "rows": out_rows}
+    write_outreach_run(state)
+    return state
+
+def outreach_row_command(row, run_id):
+    return (f'Run outreach diagnostic for "{row["company"]}" — {row["url"]} (outreach run {run_id}). '
+            f"Follow the site-diagnostic skill (.claude/skills/site-diagnostic/SKILL.md) in OUTREACH MODE: "
+            f"run diagnose.py into outreach/prospects/{row['domain']}/, classify the industry and resolve "
+            f"the diagnostic standard (generate + report a new playbook if the industry has none), score "
+            f"both axes, and write report.md AND result.json (exact schema in the skill). Draft the email "
+            f"only if the verdict makes it a rebuild candidate. HONESTY RULES ARE BINDING: measurable "
+            f"claims verified-true, judged claims flagged opinion, never fabricate a deficiency. "
+            f"Do NOT write under clients/ and do NOT touch outreach/masterfile.csv or "
+            f"outreach/drafted-emails.csv — the runner owns those.")
+
+def _finish_outreach_row(row, run_id):
+    """Consume the row job's result.json -> masterfile + drafted-emails rows. Returns verdict or None."""
+    rj = OUTREACH_PROSPECTS / row["domain"] / "result.json"
+    if not rj.exists():
+        return None
+    try:
+        res = json.loads(rj.read_text())
+    except Exception:
+        return None
+    drafted = bool(res.get("candidate") and (res.get("email") or {}).get("body"))
+    probs = (res.get("top_problems") or [])[:3]
+    _append_csv_row(OUTREACH_MASTER, MASTER_FIELDS, {
+        "domain": row["domain"], "company": row["company"], "url": row["url"],
+        "date_processed": now(), "industry": res.get("industry", ""),
+        "standard": res.get("standard", ""), "verdict": res.get("verdict", ""),
+        "score": res.get("measurable_score", ""), "top_problems": " | ".join(probs),
+        "contact_status": "drafted" if drafted else "diagnosed", "run_id": run_id})
+    if drafted:
+        em = res["email"]
+        _append_csv_row(OUTREACH_DRAFTS, DRAFT_FIELDS, {
+            "company": row["company"], "url": row["url"], "domain": row["domain"],
+            "industry": res.get("industry", ""),
+            "problem_1": probs[0] if probs else "", "problem_2": probs[1] if len(probs) > 1 else "",
+            "problem_3": probs[2] if len(probs) > 2 else "",
+            "subject": em.get("subject", ""), "body": em.get("body", ""),
+            "run_id": run_id, "date": now()})
+    return res.get("verdict", "done")
+
+def outreach_runner(run_id):
+    """Sequential, paced, resumable row processor. One claude -p per pending row (BG_SEM +
+    CLAUDE_SEM paced like every background build); a row failure logs and moves on; a
+    TRANSIENT failure (budget/rate) pauses the whole run for a later resume."""
+    state = read_outreach_run(run_id)
+    if not state:
+        return
+    state["status"] = "running"
+    write_outreach_run(state)
+    tail = TASKS[OUTREACH_KEY]["tail"]
+    summary_counts = {}
+    try:
+        for row in state["rows"]:
+            if OUTREACH_STOP.is_set():
+                state["status"] = "stopped"
+                break
+            if row["status"] not in ("pending", "active"):
+                continue
+            row["status"] = "active"
+            write_outreach_run(state)
+            tail.append(f"row {row['n']}: {row['company']} ({row['domain']}) …")
+            del tail[:-60]
+            rc = 1
+            with BG_SEM, CLAUDE_SEM:
+                try:
+                    proc = subprocess.Popen([CLAUDE_BIN, "-p", outreach_row_command(row, run_id)],
+                                            cwd=str(ROOT), stdout=subprocess.PIPE,
+                                            stderr=subprocess.STDOUT, text=True)
+                except Exception as e:
+                    row["status"] = "failed"; row["note"] = f"spawn failed: {e}"
+                    write_outreach_run(state)
+                    continue
+                TASKS[OUTREACH_KEY]["proc"] = proc
+                killer = threading.Timer(OUTREACH_ROW_TIMEOUT_S, proc.kill)
+                killer.start()
+                row_tail = []
+                for line in proc.stdout:
+                    line = line.rstrip()
+                    if line:
+                        row_tail.append(line); del row_tail[:-20]
+                        tail.append(line); del tail[:-60]
+                rc = proc.wait()
+                killer.cancel()
+                TASKS[OUTREACH_KEY]["proc"] = None
+            verdict = _finish_outreach_row(row, run_id)
+            if verdict:
+                row["status"] = "done"; row["verdict"] = verdict
+                row["note"] = ""
+            elif is_transient_failure(" ".join(row_tail)):
+                row["status"] = "pending"
+                state["status"] = "paused"
+                state["note"] = f"transient failure on row {row['n']} (budget/rate) — Resume continues here"
+                write_outreach_run(state)
+                tail.append("PAUSED (transient failure — resumable)")
+                break
+            else:
+                row["status"] = "failed" if rc != 0 else "unreachable"
+                row["note"] = ("timeout/" if rc == -9 else "") + (" / ".join(row_tail[-3:]))[:300]
+            write_outreach_run(state)
+            summary_counts[row["status"]] = summary_counts.get(row["status"], 0) + 1
+            if not OUTREACH_STOP.is_set():
+                OUTREACH_STOP.wait(OUTREACH_PACING_S)   # polite pacing, interruptible by Stop
+        else:
+            state["status"] = "done"
+    finally:
+        if state["status"] == "running":
+            state["status"] = "stopped"
+        state["finished"] = now()
+        write_outreach_run(state)
+        try:
+            write_outreach_report(state)
+        except Exception:
+            pass
+        with TASK_LOCK:
+            TASKS.pop(OUTREACH_KEY, None)
+
+def write_outreach_report(state):
+    """Findings convention: every run ends with a studio-level report file."""
+    rep = ROOT / ".claude" / "reports"
+    rep.mkdir(parents=True, exist_ok=True)
+    counts = {}
+    for r in state["rows"]:
+        counts[r["status"]] = counts.get(r["status"], 0) + 1
+    verds = {}
+    for r in state["rows"]:
+        if r.get("verdict"):
+            verds[r["verdict"]] = verds.get(r["verdict"], 0) + 1
+    ts = datetime.now(timezone.utc).strftime("%Y-%m-%d-%H%M")
+    L = [f"# Outreach run {state['run_id']} — {state['status']}",
+         f"Source: {state['source_file']} · mapping: company={state['mapping']['company_col']!r} "
+         f"url={state['mapping']['url_col']!r} · {len(state['rows'])} rows", "",
+         "## Row outcomes", *(f"- {k}: {v}" for k, v in sorted(counts.items())), "",
+         "## Verdicts", *(f"- {k}: {v}" for k, v in sorted(verds.items())), "",
+         "Outputs: outreach/masterfile.csv (dedup source of truth) + outreach/drafted-emails.csv "
+         "(review surface — NOTHING SENT). Per-prospect reports: outreach/prospects/<domain>/report.md"]
+    (rep / f"{ts}-outreach-run-{state['run_id']}.md").write_text("\n".join(L))
+
+def list_outreach_runs():
+    runs = []
+    if OUTREACH_RUNS.exists():
+        for d in sorted(OUTREACH_RUNS.iterdir(), reverse=True)[:6]:
+            st = read_outreach_run(d.name)
+            if not st:
+                continue
+            counts = {}
+            for r in st["rows"]:
+                counts[r["status"]] = counts.get(r["status"], 0) + 1
+            cur = next((r for r in st["rows"] if r["status"] == "active"), None)
+            runs.append({"run_id": st["run_id"], "created": st["created"], "status": st["status"],
+                         "source_file": st["source_file"], "mapping": st["mapping"],
+                         "counts": counts, "total": len(st["rows"]),
+                         "current": (f"{cur['company']} ({cur['domain']})" if cur else ""),
+                         "note": st.get("note", "")})
+    return runs
+
+def outreach_state():
+    master = _read_csv_dicts(OUTREACH_MASTER)
+    files = []
+    for label, p in (("masterfile.csv", OUTREACH_MASTER), ("drafted-emails.csv", OUTREACH_DRAFTS)):
+        if p.exists():
+            mt = datetime.fromtimestamp(p.stat().st_mtime, timezone.utc).strftime("%Y-%m-%d %H:%M:%SZ")
+            files.append({"name": label, "rows": max(0, sum(1 for _ in p.open()) - 1), "updated": mt})
+    recent = [{k: r.get(k, "") for k in ("company", "domain", "verdict", "score", "contact_status", "date_processed")}
+              for r in master[-12:]][::-1]
+    return {"runs": list_outreach_runs(), "files": files, "master_rows": len(master),
+            "recent": recent, "busy": OUTREACH_KEY in TASKS,
+            "tail": TASKS.get(OUTREACH_KEY, {}).get("tail", [])[-8:],
+            "pacing_s": OUTREACH_PACING_S}
+
+OUTREACH_PAGE = """<!doctype html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>Outreach · Web Studio</title>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@400;500&family=Public+Sans:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{--ink:#0c1622;--panel:#122031;--panel2:#182a3f;--line:#2a3c52;--paper:#f4f1ea;
+--amber:#ffb000;--amber2:#d98e00;--muted:#8fa1b5;--grn:#7bd88f;--grn2:#2f8a6a;
+--d:"Barlow Condensed",sans-serif;--b:"Public Sans",sans-serif;--m:"IBM Plex Mono",monospace}
+*{box-sizing:border-box}body{margin:0;background:var(--ink);color:var(--paper);font-family:var(--b);font-size:15px}
+.wrap{max-width:60rem;margin:0 auto;padding:2rem 1.2rem}
+a{color:var(--amber)}
+h1{font-family:var(--d);font-size:2.2rem;text-transform:uppercase;margin:0}
+.sub{font-family:var(--m);font-size:.66rem;letter-spacing:.2em;text-transform:uppercase;color:var(--grn);margin:.2rem 0 .2rem}
+.back{font-family:var(--m);font-size:.72rem;text-decoration:none;color:var(--muted)}
+.back:hover{color:var(--amber)}
+.boundary{border:1px solid var(--grn2);background:#0f2019;color:#bff0d8;font-size:.78rem;
+padding:.7rem .9rem;border-radius:4px;margin:1rem 0 1.4rem;line-height:1.45}
+.card{background:var(--panel);border:1px solid var(--line);padding:1.1rem 1.3rem;margin:0 0 1rem}
+.card h2{font-family:var(--d);font-size:1.2rem;text-transform:uppercase;margin:0 0 .7rem;color:var(--amber)}
+button{background:var(--amber);border:1px solid var(--amber);color:var(--ink);
+font-family:var(--d);font-weight:700;font-size:.9rem;text-transform:uppercase;letter-spacing:.04em;
+padding:.5rem 1.1rem;cursor:pointer;border-radius:2px;margin-top:.9rem}
+button:hover{background:transparent;color:var(--amber)}
+button.ghost{background:transparent;color:var(--muted);border-color:var(--line);font-size:.78rem}
+button.ghost:hover{color:var(--amber);border-color:var(--amber)}
+button.go{background:var(--grn);border-color:var(--grn);color:#06140c}
+button.go:hover{background:transparent;color:var(--grn)}
+button[disabled]{opacity:.5;cursor:not-allowed}
+.drop{display:flex;gap:.7rem;align-items:center;flex-wrap:wrap;font-family:var(--m);font-size:.74rem;color:var(--muted)}
+.drop input[type=file]{max-width:22rem;font-size:.72rem;background:var(--ink);border:1px solid var(--line);color:var(--paper);padding:.45rem}
+.drop button{margin-top:0}
+.okmsg{color:var(--grn);font-size:.74rem;font-family:var(--m)}
+.mono{font-family:var(--m);font-size:.72rem;color:var(--muted)}
+.stat{display:flex;gap:1.4rem;flex-wrap:wrap;font-family:var(--m);font-size:.8rem;margin:.4rem 0}
+.stat b{color:var(--paper);font-size:1.3rem;font-family:var(--d)}
+.flag{border-left:3px solid var(--amber2);background:var(--panel2);padding:.5rem .7rem;margin:.5rem 0;font-size:.76rem}
+.flag.bad{border-color:#ff8a5d}
+table{border-collapse:collapse;width:100%;font-family:var(--m);font-size:.72rem;margin-top:.5rem}
+th,td{border-bottom:1px solid var(--line);padding:.35rem .5rem;text-align:left;color:var(--muted)}
+th{color:var(--amber);font-weight:500;text-transform:uppercase;font-size:.62rem;letter-spacing:.08em}
+td b{color:var(--paper)}
+.pill{font-family:var(--m);font-size:.6rem;letter-spacing:.06em;text-transform:uppercase;border:1px solid var(--line);color:var(--muted);padding:.12em .5em;border-radius:2px;margin-left:.4rem}
+.pill.v-strong-candidate,.pill.v-candidate{border-color:var(--grn2);color:var(--grn)}
+.pill.v-skip{border-color:var(--line)}
+.pill.v-unreachable,.pill.v-failed{border-color:#ff8a5d;color:#ff8a5d}
+.tail{font-family:var(--m);font-size:.66rem;color:var(--grn);background:#0a1410;border:1px solid var(--grn2);
+padding:.5rem .7rem;margin-top:.5rem;white-space:pre-wrap;max-height:9rem;overflow-y:auto}
+.empty{color:var(--muted);font-family:var(--m);font-size:.8rem}
+#reportview{white-space:pre-wrap;font-family:var(--m);font-size:.74rem;color:var(--paper);
+background:var(--ink);border:1px solid var(--line);padding:1rem;max-height:34rem;overflow-y:auto;margin-top:.6rem}
+.runrow{border:1px solid var(--line);background:var(--panel2);padding:.6rem .8rem;margin:.5rem 0}
+.dl{font-family:var(--m);font-size:.74rem}
+</style></head><body><div class="wrap">
+<a class="back" href="/">← Web Studio dashboard</a>
+<h1>Outreach</h1><p class="sub">Prospect diagnostics → drafted emails · nothing is sent from here</p>
+<div class="boundary"><b>Boundary.</b> This pipeline DIAGNOSES prospect sites and DRAFTS personalized emails for your review — it never sends. Measurable claims are verified-true by the diagnostic engine; aesthetic judgments are flagged opinion and phrased softly; a deficiency is never fabricated. Sending (with unsubscribe + physical-address compliance) is a separate, later layer.</div>
+
+<div class="card"><h2>1 · Upload prospect spreadsheet (Grata CSV/XLSX)</h2>
+  <p class="mono">Company-name + website columns are auto-detected from the headers (the inferred mapping is shown before anything runs). Rows already in the masterfile are skipped as duplicates.</p>
+  <form class="drop" onsubmit="return uploadSheet(event)">
+    <input type="file" accept=".csv,.xlsx,text/csv" required>
+    <button class="ghost">Upload</button>
+    <span class="okmsg" id="upmsg"></span>
+  </form>
+  <div id="upresult"></div>
+</div>
+
+<div class="card"><h2>2 · Runs</h2><div id="runs"><p class="empty">No runs yet.</p></div></div>
+
+<div class="card"><h2>3 · Output files &amp; recent verdicts</h2>
+  <div id="files" class="dl"></div>
+  <div id="recent"></div>
+  <div id="reportwrap" style="display:none"><div class="mono" id="reporttitle"></div><div id="reportview"></div></div>
+</div>
+</div>
+<script>
+async function api(path, body){
+  const r = await fetch(path, body ? {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)} : undefined);
+  if(r.status===401){ document.body.innerHTML='<p style="font-family:monospace;color:#ffb000;padding:2rem">401 — reopen with ?key=&lt;token&gt;</p>'; throw 0; }
+  return r.json();
+}
+function esc(s){ return (''+(s||'')).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+function readDataURL(file){ return new Promise(res=>{ const fr=new FileReader(); fr.onload=()=>res(fr.result); fr.readAsDataURL(file); }); }
+let UPLOADED=null;
+async function uploadSheet(e){ e.preventDefault();
+  const f=e.target, file=f.querySelector('input[type=file]').files[0]; if(!file) return false;
+  const m=document.getElementById('upmsg'); m.style.color=''; m.textContent='parsing…';
+  const b64=await readDataURL(file);
+  const r=await api('/api/outreach/upload',{filename:file.name,b64});
+  if(r.error){ m.style.color='#ff8a5d'; m.textContent='✗ '+r.error; return false; }
+  UPLOADED=r.run_id; m.textContent='parsed ✓ '+file.name; f.reset();
+  const c=r.counts||{};
+  document.getElementById('upresult').innerHTML=
+    `<div class="flag">Column mapping inferred — <b>company:</b> ${esc(r.mapping.company_col||'(none — domain used)')} · <b>website:</b> ${esc(r.mapping.url_col)}<br>
+     rows: ${r.total} · to process: ${c.pending||0} · duplicate (masterfile/sheet): ${c['skipped-duplicate']||0} · no usable URL: ${c['skipped-no-url']||0}</div>
+     <button class="go" onclick="startRun('${r.run_id}')">Start diagnostics ▶</button>
+     <div class="mono" style="margin-top:.4rem">Paced (one site at a time, ${r.pacing_s}s between rows), resumable — Stop anytime; Start again continues where it left off.</div>`;
+  return false; }
+async function startRun(id){ const r=await api('/api/outreach/start',{run_id:id});
+  if(r.error){ alert(r.error); return; } document.getElementById('upresult').innerHTML=''; refresh(); }
+async function stopRun(){ await api('/api/outreach/stop',{}); refresh(); }
+async function openReport(domain){
+  const r=await fetch('/api/outreach/report?domain='+encodeURIComponent(domain));
+  const t=await r.text();
+  document.getElementById('reportwrap').style.display='block';
+  document.getElementById('reporttitle').textContent='report — '+domain;
+  document.getElementById('reportview').textContent=t;
+}
+function runRow(r){
+  const c=r.counts||{}, done=(c.done||0), todo=(c.pending||0)+(c.active||0);
+  const can=['stopped','paused','ready'].includes(r.status)&&todo>0;
+  return `<div class="runrow"><div class="mono"><b style="color:var(--paper)">${r.run_id}</b> · ${esc(r.source_file)} · <span class="pill">${r.status}</span>
+    ${r.note?`<span style="color:#ff8a5d"> ${esc(r.note)}</span>`:''}</div>
+    <div class="stat"><div><b>${done}</b><br><span class="mono">done</span></div>
+      <div><b>${todo}</b><br><span class="mono">to go</span></div>
+      <div><b>${(c['skipped-duplicate']||0)+(c['skipped-no-url']||0)}</b><br><span class="mono">skipped</span></div>
+      <div><b>${(c.failed||0)+(c.unreachable||0)}</b><br><span class="mono">failed/dead</span></div>
+      <div><b>${r.total}</b><br><span class="mono">total</span></div></div>
+    ${r.status==='running'?`<div class="mono">now: ${esc(r.current)||'…'}</div><button class="ghost" onclick="stopRun()">■ Stop after this row</button>`:''}
+    ${can?`<button class="go" onclick="startRun('${r.run_id}')">${r.status==='ready'?'Start':'Resume'} ▶</button>`:''}
+  </div>`;
+}
+async function refresh(){
+  const s=await api('/api/outreach/state');
+  const runs=document.getElementById('runs');
+  runs.innerHTML=(s.runs&&s.runs.length)?s.runs.map(runRow).join('')+(s.busy&&s.tail.length?`<div class="tail">${s.tail.map(esc).join('\\n')}</div>`:''):'<p class="empty">No runs yet — upload a spreadsheet above.</p>';
+  document.getElementById('files').innerHTML=(s.files&&s.files.length)?
+    s.files.map(f=>`<div>⤓ <a href="/api/outreach/file?name=${f.name}">${f.name}</a> — ${f.rows} rows · updated ${f.updated}</div>`).join('')
+    :'<p class="empty">No output files yet (masterfile + drafted-emails appear after the first processed row).</p>';
+  document.getElementById('recent').innerHTML=(s.recent&&s.recent.length)?
+    `<table><tr><th>company</th><th>domain</th><th>verdict</th><th>score</th><th>status</th><th>report</th></tr>`+
+    s.recent.map(r=>`<tr><td><b>${esc(r.company)}</b></td><td>${esc(r.domain)}</td>
+      <td><span class="pill v-${esc(r.verdict)}">${esc(r.verdict)}</span></td><td>${esc(r.score)}</td>
+      <td>${esc(r.contact_status)}</td><td><a href="#" onclick="openReport('${esc(r.domain)}');return false">view</a></td></tr>`).join('')+'</table>':'';
+}
+refresh();
+setInterval(refresh, 4000);
+</script></body></html>"""
+
 IMPORT_PAGE = """<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><title>Marketplace Import · Web Studio</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@400;500&family=Public+Sans:wght@400;600&display=swap" rel="stylesheet">
@@ -2337,6 +2792,29 @@ class H(BaseHTTPRequestHandler):
             self._send(PAGE, setcookie=True)
         elif path == "/import":
             self._send(IMPORT_PAGE, setcookie=True)
+        elif path == "/outreach":
+            self._send(OUTREACH_PAGE, setcookie=True)
+        elif path == "/api/outreach/state":
+            self._send(json.dumps(outreach_state()), "application/json")
+        elif path == "/api/outreach/file":
+            name = parse_qs(urlparse(self.path).query).get("name", [""])[0]
+            f = {"masterfile.csv": OUTREACH_MASTER, "drafted-emails.csv": OUTREACH_DRAFTS}.get(name)
+            if not f or not f.exists():
+                return self._send("not found", code=404)
+            b = f.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/csv; charset=utf-8")
+            self.send_header("Content-Disposition", f'attachment; filename="{name}"')
+            self.send_header("Content-Length", str(len(b)))
+            self.end_headers()
+            self.wfile.write(b)
+        elif path == "/api/outreach/report":
+            domain = parse_qs(urlparse(self.path).query).get("domain", [""])[0]
+            domain = re.sub(r"[^a-z0-9.-]", "", domain.lower())
+            f = OUTREACH_PROSPECTS / domain / "report.md"
+            if not domain or ".." in domain or not f.exists():
+                return self._send("no report for this domain (yet)", code=404)
+            self._send(f.read_text(), "text/plain")
         elif path == "/api/import/state":
             slug = slugify(parse_qs(urlparse(self.path).query).get("slug", [""])[0])
             cdir = CLIENTS / slug
@@ -2456,6 +2934,48 @@ class H(BaseHTTPRequestHandler):
             target.write_text(content)
             bump(cdir, msg=f"uploaded {dest}/{fname} ({len(content)} chars) via dashboard")
             return self._send(json.dumps({"ok": True, "path": f"02-intake/{dest}/{fname}"}), "application/json")
+        elif path == "/api/outreach/upload":
+            fname = Path(d.get("filename", "") or "prospects.csv").name
+            b64 = d.get("b64", "")
+            if not b64:
+                return self._send(json.dumps({"error": "no file content"}), "application/json", 400)
+            try:
+                raw = base64.b64decode(b64.split(",", 1)[-1])
+                state = create_outreach_run(fname, raw)
+            except ValueError as e:
+                return self._send(json.dumps({"error": str(e)}), "application/json", 400)
+            except Exception as e:
+                return self._send(json.dumps({"error": f"could not parse {fname}: {str(e)[:160]}"}), "application/json", 400)
+            counts = {}
+            for r in state["rows"]:
+                counts[r["status"]] = counts.get(r["status"], 0) + 1
+            return self._send(json.dumps({"ok": True, "run_id": state["run_id"],
+                                          "mapping": state["mapping"], "total": len(state["rows"]),
+                                          "counts": counts, "pacing_s": OUTREACH_PACING_S}), "application/json")
+        elif path == "/api/outreach/start":
+            run_id = re.sub(r"[^0-9-]", "", d.get("run_id", ""))
+            st = read_outreach_run(run_id)
+            if not st:
+                return self._send(json.dumps({"error": "no such run"}), "application/json", 404)
+            if not any(r["status"] in ("pending", "active") for r in st["rows"]):
+                return self._send(json.dumps({"error": "nothing left to process in this run"}), "application/json", 400)
+            with TASK_LOCK:
+                if OUTREACH_KEY in TASKS:
+                    return self._send(json.dumps({"error": "an outreach run is already in progress"}), "application/json", 409)
+                TASKS[OUTREACH_KEY] = {"kind": "outreach run", "label": run_id, "started": now(),
+                                       "tail": [], "proc": None}
+            OUTREACH_STOP.clear()
+            # any row left 'active' by a crash/stop resumes as pending
+            for r in st["rows"]:
+                if r["status"] == "active":
+                    r["status"] = "pending"
+            st["note"] = ""
+            write_outreach_run(st)
+            threading.Thread(target=outreach_runner, args=(run_id,), daemon=True).start()
+            return self._send(json.dumps({"ok": True}), "application/json")
+        elif path == "/api/outreach/stop":
+            OUTREACH_STOP.set()
+            return self._send(json.dumps({"ok": True, "note": "stopping after the current row"}), "application/json")
         elif path == "/api/import/new":
             # Create a marketplace-migration client (Etsy/eBay export instead of a scrape). SYSTEM.md §1a.
             name = (d.get("name", "") or "").strip()
