@@ -32,7 +32,7 @@ from engine import (  # noqa: E402
 )
 
 
-def _router(base: Path) -> TenantRouter:
+def _router(base: Path, *, admin_token: str | None = None) -> TenantRouter:
     tenants = InMemoryTenantStore(
         [Tenant(id="t1", api_token="tok1"), Tenant(id="t2", api_token="tok2")]
     )
@@ -50,12 +50,19 @@ def _router(base: Path) -> TenantRouter:
             fetcher=FakeFetcher(),
         )
 
-    return TenantRouter(tenants, factory)
+    return TenantRouter(tenants, factory, admin_token=admin_token)
 
 
 def _req(method: str, path: str, token: str | None = None, body: dict | None = None) -> Request:
+    # split the query string the way the HTTP adapters do, so path matching + ?status= work
+    p, _, raw = path.partition("?")
+    query = {}
+    for pair in raw.split("&"):
+        if "=" in pair:
+            k, v = pair.split("=", 1)
+            query[k] = v
     headers = {"Authorization": f"Bearer {token}"} if token else {}
-    return Request(method=method, path=path, body=body, headers=headers)
+    return Request(method=method, path=p, body=body, headers=headers, query=query)
 
 
 # --------------------------------------------------------------------------- #
@@ -104,6 +111,48 @@ def test_tenant_isolation() -> None:
         assert r.dispatch(_req("GET", "/v1/projects/acme", "tok2")).status == 404
         # t1 still can
         assert r.dispatch(_req("GET", "/v1/projects/acme", "tok1")).status == 200
+
+
+def test_admin_disabled_without_token() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        r = _router(Path(tmp))  # no admin_token
+        assert r.dispatch(_req("POST", "/v1/tenants", body={"name": "X"})).status == 403
+
+
+def test_admin_requires_admin_token() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        r = _router(Path(tmp), admin_token="ADMIN")
+        assert r.dispatch(_req("POST", "/v1/tenants", body={"name": "X"})).status == 403  # no creds
+        assert r.dispatch(_req("GET", "/v1/tenants", token="tok1")).status == 403          # tenant token != admin
+
+
+def test_admin_create_tenant_then_use_it() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        r = _router(Path(tmp), admin_token="ADMIN")
+        resp = r.dispatch(_req("POST", "/v1/tenants", token="ADMIN", body={"name": "New Co"}))
+        assert resp.status == 201
+        new_token = resp.body["api_token"]
+        assert new_token and resp.body["name"] == "New Co"
+        # the freshly-minted token works as a tenant
+        assert r.dispatch(_req("POST", "/v1/projects", new_token, {"slug": "newco-site"})).status == 201
+        # admin list shows it but never leaks the token
+        listed = r.dispatch(_req("GET", "/v1/tenants", token="ADMIN")).body["tenants"]
+        assert any(t["name"] == "New Co" for t in listed)
+        assert all("api_token" not in t for t in listed)
+
+
+def test_admin_cross_tenant_launch_queue() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        r = _router(Path(tmp), admin_token="ADMIN")
+        # two tenants each stand up a project and request launch
+        for tok, slug in (("tok1", "a-site"), ("tok2", "b-site")):
+            assert r.dispatch(_req("POST", "/v1/projects", tok, {"slug": slug})).status == 201
+            assert r.dispatch(_req("POST", f"/v1/projects/{slug}/launch/request", tok)).status == 200
+        resp = r.dispatch(_req("GET", "/v1/admin/launches?status=pending", token="ADMIN"))
+        assert resp.status == 200
+        queue = resp.body["launches"]
+        assert {(q["tenant_id"], q["slug"]) for q in queue} == {("t1", "a-site"), ("t2", "b-site")}
+        assert all(q["launch"]["status"] == "pending" for q in queue)
 
 
 def _run() -> int:

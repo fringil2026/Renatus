@@ -105,9 +105,9 @@ A separate, reviewer-authenticated surface (uses the `reviewer_token`, not a cus
 Pending launches:
   acme-orchids   prototype preview ↗   submitted 2h ago   [ Approve ] [ Reject … ]
 ```
+- `GET /v1/admin/launches?status=pending` ✓ — the **cross-tenant** review queue (platform-admin
+  token), so ops sees pending launches across all tenants.
 - `POST …/launch/approve` / `…/launch/reject {note}` ✓ (require the reviewer bearer).
-- ⛏ a **cross-tenant** pending-launch queue (`GET /v1/admin/launches?status=pending`) — **not built**;
-  the per-tenant `TenantRouter` has no cross-tenant view yet. Ops needs one (or a separate admin app).
 
 ---
 
@@ -142,13 +142,14 @@ The engine stage machine drives what the customer sees (poll `GET /v1/projects/{
 
 ## 6 · API gaps the web app needs (the remaining backend work)
 Consolidated, actionable — control-plane additions. ✅ = built; ⛏ = remaining.
-1. ⛏ `POST /v1/tenants` — self-serve tenant signup + token issuance (Step 0).
+1. ✅ `POST /v1/tenants` — tenant signup + token issuance (platform-admin; an auth vendor can front it).
 2. ✅ `POST …/actions/baseline` — run the scrape ladder (`queued` → `baseline-ready`) (Step 4).
 3. ✅ `POST …/actions/intake-pack` — generate concept boards + open the concept decision (Step 4).
 4. ✅ `POST …/decisions/{n}/resolve {choice}` — record the concept pick (Step 4).
 5. ⛏ Asset/intake endpoints — upload owner answers, deliverables, logo/photos (Step 7).
 6. ⛏ Static asset route — serve concept-board screenshots + preview thumbnails (Step 4/5).
-7. ⛏ `GET /v1/admin/launches` — cross-tenant reviewer queue (Step 2 / §2).
+7. ✅ `GET /v1/admin/launches` — cross-tenant reviewer queue (Step 2 / §2).
 8. ⛏ Stripe integration — real `billing/checkout` + webhook (Step 2).
 
-Remaining are mostly vendor/asset/admin surfaces; items 5–7 are still pure engine/API work.
+Remaining: 5 + 6 (asset upload/serving — still pure engine/API over the ArtifactStore) and 8 (Stripe,
+the one true vendor dependency).

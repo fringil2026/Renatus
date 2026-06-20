@@ -86,4 +86,4 @@ def build_tenant_router(*, root: str | Path | None = None) -> TenantRouter:
             enforce_billing=enforce_billing,
         )
 
-    return TenantRouter(tenants, app_factory)
+    return TenantRouter(tenants, app_factory, admin_token=os.environ.get("WS_ADMIN_TOKEN"))
