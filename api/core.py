@@ -31,9 +31,11 @@ from engine import (
     Incident,
     InlineRunner,
     InMemoryRunStore,
+    PLAN_ACTIVE,
     LaunchError,
     LaunchReview,
     NotApprovedError,
+    NotPaidError,
     NotVerifiedError,
     Ownership,
     PreconditionError,
@@ -53,14 +55,18 @@ from engine import (
     challenge_instructions,
     check_verification,
     command_available,
+    get_plan,
     process_edits,
     reject,
     request_review,
     require_launch_approved,
+    require_paid_plan,
     require_verified,
     run_cutover,
     run_diagnostic,
+    set_plan,
     start_verification,
+    summarize_runs,
 )
 from engine.driver import BuildDriver
 from engine.publish import Publisher
@@ -149,6 +155,7 @@ class Application:
         enforce_ownership: bool = True,
         runner: Runner | None = None,
         reviewer_token: str | None = None,
+        enforce_billing: bool = False,
     ) -> None:
         self._store = store
         self._driver = driver
@@ -158,6 +165,10 @@ class Application:
         # customer can't approve their own launch (ADR-0002 #2). None = dev (no reviewer gate).
         # Production replaces this with real RBAC.
         self._reviewer_token = reviewer_token
+        # Paywall: gate the rebuild (assemble) behind a paid plan (ADR-0002 #4). Off by default —
+        # the entitlement model + gate exist and are tested, but enforcement ships with payment
+        # integration (Stripe). The diagnostic is always free.
+        self._enforce_billing = enforce_billing
         self._now = now_fn
         # The durable-workflow seam: actions are enqueued and return 202 + a run record. Default is
         # the inline runner (synchronous, in-memory) — the dev server / production inject a
@@ -190,6 +201,9 @@ class Application:
         self._route("POST", "/v1/projects/{slug}/ownership/verify", _h_ownership_verify)
         self._route("GET", "/v1/projects/{slug}/runs", _h_list_runs)
         self._route("GET", "/v1/projects/{slug}/runs/{run_id}", _h_get_run)
+        self._route("GET", "/v1/projects/{slug}/usage", _h_usage)
+        self._route("GET", "/v1/projects/{slug}/billing", _h_billing_status)
+        self._route("POST", "/v1/projects/{slug}/billing/checkout", _h_billing_checkout)
         self._route("GET", "/v1/projects/{slug}/launch", _h_launch_status)
         self._route("POST", "/v1/projects/{slug}/launch/request", _h_launch_request)
         self._route("POST", "/v1/projects/{slug}/launch/approve", _h_launch_approve)
@@ -249,6 +263,8 @@ class Application:
             return Response(403, {"error": str(e)})
         except NotApprovedError as e:
             return Response(403, {"error": str(e)})
+        except NotPaidError as e:
+            return Response(402, {"error": str(e)})  # 402 Payment Required
         except LaunchError as e:
             return Response(409, {"error": str(e)})
         except VerificationError as e:
@@ -386,6 +402,26 @@ def _h_get_run(app: Application, req: Request, p: dict[str, str]) -> Response:
     return Response(200, {"run": _run_json(run)})
 
 
+# -- metering + billing (ADR-0002 #3/#4) ----------------------------------- #
+def _h_usage(app: Application, req: Request, p: dict[str, str]) -> Response:
+    app._require_project(p["slug"])
+    summary = summarize_runs(app._runner.runs.list(p["slug"]))
+    return Response(200, {"usage": summary.to_dict()})
+
+
+def _h_billing_status(app: Application, req: Request, p: dict[str, str]) -> Response:
+    project = app._require_project(p["slug"])
+    return Response(200, {"plan": get_plan(project), "enforced": app._enforce_billing})
+
+
+def _h_billing_checkout(app: Application, req: Request, p: dict[str, str]) -> Response:
+    """Dev stub for the rebuild-fee checkout. Production: Stripe Checkout + a webhook flips the plan."""
+    project = app._require_project(p["slug"])
+    set_plan(project, PLAN_ACTIVE)
+    app.store.save_project(project)
+    return Response(200, {"plan": get_plan(project)})
+
+
 # -- ownership ------------------------------------------------------------- #
 def _ownership_json(o: Ownership | None) -> dict[str, Any]:
     return o.to_dict() if o is not None else {"status": "unverified"}
@@ -497,8 +533,10 @@ def _precheck_stage(project: Project, command: Command) -> None:
 
 def _h_assemble(app: Application, req: Request, p: dict[str, str]) -> Response:
     project = app._require_project(p["slug"])
-    _gate_ownership(app, project)
-    _precheck_stage(project, Command.ASSEMBLE)
+    _gate_ownership(app, project)                       # 403 unless domain verified
+    if app._enforce_billing:
+        require_paid_plan(project)                      # 402 unless the rebuild fee is paid
+    _precheck_stage(project, Command.ASSEMBLE)          # 409 unless stage=baseline-ready
     return _enqueue(app, p["slug"], "assemble", assemble_prototype, publisher=app._publisher)
 
 

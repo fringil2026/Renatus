@@ -42,6 +42,10 @@ class CommandOutcome:
     preview_url: str | None = None
     report: Report | None = None
     message: str = ""
+    # Telemetry surfaced from the BuildDriver's AgentResult, for per-run metering (ADR-0002 #3/#4).
+    # Populated by drivers that report it (AgentSDKDriver); None for subprocess/mock drivers.
+    cost_usd: float | None = None
+    usage: dict | None = None
 
 
 def _require(store: ProjectStore, slug: str) -> Project:
@@ -79,6 +83,7 @@ def run_command(
     store.append_log(slug, f"{now} {kind} started: {command}")  # pre-spawn → safe
 
     result = driver.run(command, slug=slug)
+    meter = {"cost_usd": result.cost_usd, "usage": result.usage}  # carried onto every outcome below
 
     if result.ok:
         p = _require(store, slug)
@@ -106,9 +111,9 @@ def run_command(
                 report = store.add_report(slug, report_kind, body, timestamp=now)
             except ReportExists:
                 report = None  # idempotent re-run at the same timestamp
-        return CommandOutcome(ok=True, preview_url=preview_url, report=report, message="ok")
+        return CommandOutcome(ok=True, preview_url=preview_url, report=report, message="ok", **meter)
 
-    # --- failure paths ---
+    # --- failure paths (transient/hard failures still cost tokens — meter them too) ---
     p = _require(store, slug)
     if result.transient:
         p.extra["paused"] = True
@@ -116,12 +121,12 @@ def run_command(
         p.extra.pop(fail_flag, None)
         p.log.append(f"{now} {kind} PAUSED (transient — resumable): {result.tail_text[-180:]}")
         store.save_project(p)
-        return CommandOutcome(ok=False, paused=True, message="paused")
+        return CommandOutcome(ok=False, paused=True, message="paused", **meter)
 
     p.extra[fail_flag] = True
     p.log.append(f"{now} {kind} FAILED (exit {result.exit_code}) — tail: {result.tail_text}")
     store.save_project(p)
-    return CommandOutcome(ok=False, message="failed")
+    return CommandOutcome(ok=False, message="failed", **meter)
 
 
 # --------------------------------------------------------------------------- #

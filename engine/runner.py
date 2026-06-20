@@ -66,6 +66,8 @@ class Runner(ABC):
                 "paused": outcome.paused,
                 "preview_url": outcome.preview_url,
                 "message": outcome.message,
+                "cost_usd": outcome.cost_usd,
+                "usage": outcome.usage,
             }
             run.status = (
                 RunStatus.SUCCEEDED if outcome.ok

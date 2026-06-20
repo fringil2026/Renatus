@@ -52,4 +52,5 @@ def build_default_app(
         enforce_ownership=enforce_ownership,
         runner=runner,
         reviewer_token=os.environ.get("WS_REVIEWER_TOKEN"),  # ops approve/reject (ADR-0002 #2)
+        enforce_billing=os.environ.get("WS_ENFORCE_BILLING", "0") != "0",  # paywall (ADR-0002 #4)
     )

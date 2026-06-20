@@ -330,6 +330,43 @@ def test_reviewer_token_separates_customer_from_ops() -> None:
         tmp.cleanup()
 
 
+def test_usage_endpoint_summarizes_runs() -> None:
+    app, tmp = _app()
+    try:
+        app.store.create_project(Project(slug="acme", domain="https://acme.example", stage=Stage.QUEUED))
+        _post(app, "/v1/projects/acme/actions/diagnose")  # one run (inline -> done)
+        status, body = _get(app, "/v1/projects/acme/usage")
+        assert status == 200
+        assert body["usage"]["runs"] == 1
+        assert body["usage"]["runs_by_kind"] == {"diagnostic": 1}
+    finally:
+        tmp.cleanup()
+
+
+def test_paywall_gates_assemble_when_billing_enforced() -> None:
+    tmp = tempfile.TemporaryDirectory()
+    try:
+        store = FilesystemProjectStore(Path(tmp.name))
+        app = Application(
+            store, driver=MockBuildDriver(), publisher=MockPublisher(), now_fn=lambda: _NOW,
+            resolver=FakeDnsResolver(), fetcher=FakeFetcher(), enforce_billing=True,
+        )
+        store.create_project(Project(slug="acme", stage=Stage.BASELINE_READY))
+        _verify(app, "acme")  # ownership ok, but plan is free
+        status, body = _post(app, "/v1/projects/acme/actions/assemble")
+        assert status == 402 and "free plan" in body["error"].lower()
+        # diagnostic stays free even with billing enforced
+        store.create_project(Project(slug="other", domain="https://o.example", stage=Stage.QUEUED))
+        assert _post(app, "/v1/projects/other/actions/diagnose")[0] == 202
+        # pay -> assemble proceeds
+        status, body = _post(app, "/v1/projects/acme/billing/checkout")
+        assert status == 200 and body["plan"] == "active"
+        status, body = _post(app, "/v1/projects/acme/actions/assemble")
+        assert status == 202 and body["run"]["status"] == "succeeded"
+    finally:
+        tmp.cleanup()
+
+
 def test_auth_enforced_when_token_set() -> None:
     app, tmp = _app(token="secret")
     try:

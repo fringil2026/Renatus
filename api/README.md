@@ -28,6 +28,10 @@ fastapi_app.py  FastAPI adapter (ADR-0001 §2 production target; import-guarded)
   `POST .../launch/{request,approve,reject}` — customer requests launch, an **ops reviewer** approves
   (separate `reviewer_token` / `$WS_REVIEWER_TOKEN`, so a customer can't approve their own). The
   `cutover` action is **gated on an approved launch** → `403` until approved.
+- ✅ Metering + paywall (ADR-0002 #3/#4): `GET /v1/projects/{slug}/usage` (per-run cost/token
+  rollup) and `POST .../billing/checkout` (dev stub; prod = Stripe). The `assemble` rebuild is gated
+  behind a paid plan → `402` when `enforce_billing` / `$WS_ENFORCE_BILLING` is on; `diagnose` stays
+  free. Enforcement is off by default until payment integration is live.
 - ✅ Auth seam: bearer-token check (dev mode = off when no token); `/healthz` open
 - ✅ Tested at the dispatch level (`tests/test_api.py`, 10/10) + a real-HTTP smoke of the dev server
 

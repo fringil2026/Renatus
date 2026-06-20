@@ -38,6 +38,15 @@ from .models import (
     VerificationMethod,
     Version,
 )
+from .billing import (
+    PLAN_ACTIVE,
+    PLAN_FREE,
+    NotPaidError,
+    get_plan,
+    is_paid,
+    require_paid_plan,
+    set_plan,
+)
 from .launch import (
     LaunchError,
     NotApprovedError,
@@ -46,6 +55,7 @@ from .launch import (
     request_review,
     require_launch_approved,
 )
+from .metering import UsageSummary, summarize_runs
 from .ownership import (
     CheckResult,
     DnsResolver,
@@ -120,7 +130,10 @@ __all__ = [
     "MockBuildDriver",
     "MockPublisher",
     "NotApprovedError",
+    "NotPaidError",
     "NotVerifiedError",
+    "PLAN_ACTIVE",
+    "PLAN_FREE",
     "OrchestrationError",
     "Ownership",
     "OwnershipStatus",
@@ -141,6 +154,7 @@ __all__ = [
     "SystemDnsResolver",
     "ThreadRunner",
     "UrllibFetcher",
+    "UsageSummary",
     "VerificationError",
     "VerificationMethod",
     "Version",
@@ -151,15 +165,20 @@ __all__ = [
     "challenge_instructions",
     "check_verification",
     "command_available",
+    "get_plan",
+    "is_paid",
     "is_transient_failure",
     "normalize_domain",
     "process_edits",
     "reject",
     "request_review",
     "require_launch_approved",
+    "require_paid_plan",
     "require_verified",
     "run_command",
     "run_cutover",
     "run_diagnostic",
+    "set_plan",
     "start_verification",
+    "summarize_runs",
 ]
