@@ -32,8 +32,10 @@ from engine import (  # noqa: E402
     can_transition,
     command_available,
     process_edits,
+    run_baseline,
     run_diagnostic,
     run_finish,
+    run_intake_pack,
 )
 
 
@@ -196,6 +198,30 @@ def test_process_edits_happy_path() -> None:
         assert out.ok
         assert out.preview_url == "https://ws-acme.pages.dev"
         assert any(r.kind == "process-edits" for r in store.list_reports("acme"))
+    finally:
+        tmp.cleanup()
+
+
+def test_baseline_advances_to_baseline_ready() -> None:
+    store, tmp = _store()
+    try:
+        _project(store, Stage.QUEUED)
+        out = run_baseline(store, MockBuildDriver(), "acme", now="2026-06-20-1200")
+        assert out.ok
+        assert store.get_project("acme").stage is Stage.BASELINE_READY
+        assert any(r.kind == "baseline" for r in store.list_reports("acme"))
+    finally:
+        tmp.cleanup()
+
+
+def test_intake_pack_stays_baseline_ready() -> None:
+    store, tmp = _store()
+    try:
+        _project(store, Stage.BASELINE_READY)
+        out = run_intake_pack(store, MockBuildDriver(), "acme", now="2026-06-20-1200")
+        assert out.ok
+        assert store.get_project("acme").stage is Stage.BASELINE_READY  # concept decision unblocks assemble
+        assert any(r.kind == "intake-pack" for r in store.list_reports("acme"))
     finally:
         tmp.cleanup()
 

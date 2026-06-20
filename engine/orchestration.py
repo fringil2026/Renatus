@@ -132,6 +132,45 @@ def run_command(
 # --------------------------------------------------------------------------- #
 # Entrypoints (CLAUDE.md commands)
 # --------------------------------------------------------------------------- #
+def run_baseline(
+    store: ProjectStore,
+    driver: BuildDriver,
+    slug: str,
+    *,
+    now: str,
+) -> CommandOutcome:
+    """The scrape ladder (site-baseline). Requires stage=queued; advances to baseline-ready."""
+    p = _require(store, slug)
+    _gate(p, Command.BASELINE)
+    outcome = run_command(
+        store, driver, slug, f"Run the baseline for {slug}",
+        kind="baseline", fail_flag="baseline_failed",
+        publisher=None, now=now, report_kind="baseline",
+    )
+    if outcome.ok:
+        store.set_stage(slug, Stage.BASELINE_READY, f"{now} baseline complete")
+    return outcome
+
+
+def run_intake_pack(
+    store: ProjectStore,
+    driver: BuildDriver,
+    slug: str,
+    *,
+    now: str,
+) -> CommandOutcome:
+    """CLAUDE.md Command 9 — concept boards + the redesign plan; opens the concept decision.
+
+    Stays at baseline-ready (the concept decision is what unblocks assemble). No publish."""
+    p = _require(store, slug)
+    _gate(p, Command.INTAKE_PACK)
+    return run_command(
+        store, driver, slug, f"Prepare intake pack for {slug}",
+        kind="intake-pack", fail_flag="intake_pack_failed",
+        publisher=None, now=now, report_kind="intake-pack",
+    )
+
+
 def assemble_prototype(
     store: ProjectStore,
     driver: BuildDriver,

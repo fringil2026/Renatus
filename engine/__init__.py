@@ -78,10 +78,12 @@ from .orchestration import (
     PreconditionError,
     assemble_prototype,
     process_edits,
+    run_baseline,
     run_command,
     run_cutover,
     run_diagnostic,
     run_finish,
+    run_intake_pack,
 )
 from .publish import MockPublisher, Publisher
 from .runner import InlineRunner, Runner, ThreadRunner
@@ -186,10 +188,12 @@ __all__ = [
     "require_launch_approved",
     "require_paid_plan",
     "require_verified",
+    "run_baseline",
     "run_command",
     "run_cutover",
     "run_diagnostic",
     "run_finish",
+    "run_intake_pack",
     "set_plan",
     "start_verification",
     "summarize_runs",

@@ -28,6 +28,7 @@ from engine import (
     DnsResolver,
     Edit,
     HttpFetcher,
+    ImmutableTransition,
     Incident,
     InlineRunner,
     InMemoryRunStore,
@@ -62,9 +63,11 @@ from engine import (
     require_launch_approved,
     require_paid_plan,
     require_verified,
+    run_baseline,
     run_cutover,
     run_diagnostic,
     run_finish,
+    run_intake_pack,
     set_plan,
     start_verification,
     summarize_runs,
@@ -195,6 +198,7 @@ class Application:
         self._route("GET", "/v1/projects/{slug}/edits", _h_list_edits)
         self._route("POST", "/v1/projects/{slug}/edits", _h_create_edit)
         self._route("GET", "/v1/projects/{slug}/decisions", _h_list_decisions)
+        self._route("POST", "/v1/projects/{slug}/decisions/{n}/resolve", _h_resolve_decision)
         self._route("GET", "/v1/projects/{slug}/incidents", _h_list_incidents)
         self._route("GET", "/v1/projects/{slug}/reports", _h_list_reports)
         self._route("GET", "/v1/projects/{slug}/ownership", _h_ownership_status)
@@ -209,6 +213,8 @@ class Application:
         self._route("POST", "/v1/projects/{slug}/launch/request", _h_launch_request)
         self._route("POST", "/v1/projects/{slug}/launch/approve", _h_launch_approve)
         self._route("POST", "/v1/projects/{slug}/launch/reject", _h_launch_reject)
+        self._route("POST", "/v1/projects/{slug}/actions/baseline", _h_baseline)
+        self._route("POST", "/v1/projects/{slug}/actions/intake-pack", _h_intake_pack)
         self._route("POST", "/v1/projects/{slug}/actions/assemble", _h_assemble)
         self._route("POST", "/v1/projects/{slug}/actions/process-edits", _h_process_edits)
         self._route("POST", "/v1/projects/{slug}/actions/diagnose", _h_diagnose)
@@ -260,6 +266,8 @@ class Application:
         except ProjectExists as e:
             return Response(409, {"error": f"project already exists: {e}"})
         except PreconditionError as e:
+            return Response(409, {"error": str(e)})
+        except ImmutableTransition as e:
             return Response(409, {"error": str(e)})
         except NotVerifiedError as e:
             return Response(403, {"error": str(e)})
@@ -352,6 +360,18 @@ def _h_create_edit(app: Application, req: Request, p: dict[str, str]) -> Respons
 def _h_list_decisions(app: Application, req: Request, p: dict[str, str]) -> Response:
     app._require_project(p["slug"])
     return Response(200, {"decisions": [_decision_json(d) for d in app.store.list_decisions(p["slug"])]})
+
+
+def _h_resolve_decision(app: Application, req: Request, p: dict[str, str]) -> Response:
+    app._require_project(p["slug"])
+    try:
+        n = int(p["n"])
+    except ValueError:
+        raise ApiError(400, "decision id must be an integer") from None
+    choice = (req.body or {}).get("choice")
+    # resolve_decision raises KeyError (404) if absent, ImmutableTransition (409) if already resolved
+    decision = app.store.resolve_decision(p["slug"], n, choice=choice)
+    return Response(200, _decision_json(decision))
 
 
 def _h_list_incidents(app: Application, req: Request, p: dict[str, str]) -> Response:
@@ -531,6 +551,19 @@ def _precheck_stage(project: Project, command: Command) -> None:
     """
     if not command_available(command, project.stage):
         raise ApiError(409, f"action not available at stage {project.stage.value!r}")
+
+
+def _h_baseline(app: Application, req: Request, p: dict[str, str]) -> Response:
+    project = app._require_project(p["slug"])
+    _gate_ownership(app, project)                       # 403 unless domain verified (scrape-heavy)
+    _precheck_stage(project, Command.BASELINE)          # 409 unless stage=queued
+    return _enqueue(app, p["slug"], "baseline", run_baseline)
+
+
+def _h_intake_pack(app: Application, req: Request, p: dict[str, str]) -> Response:
+    project = app._require_project(p["slug"])
+    _precheck_stage(project, Command.INTAKE_PACK)       # 409 unless stage=baseline-ready
+    return _enqueue(app, p["slug"], "intake-pack", run_intake_pack)
 
 
 def _h_assemble(app: Application, req: Request, p: dict[str, str]) -> Response:

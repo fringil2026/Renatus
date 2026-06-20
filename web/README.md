@@ -61,12 +61,10 @@ Prove you own yoursite.com:  ( ) DNS TXT  ( ) meta tag  ( ) /.well-known file
 "Studying your current site…"  → 3 concept boards (Classic · Confident · Bold)
    [thumbnail] [thumbnail] [thumbnail]   ( 🔥 push further )   [ Choose ]
 ```
-- ⛏ `POST …/actions/baseline` (run the scrape ladder → `baseline-ready`) — **not built**; today nothing
-  produces `baseline-ready` via the API (`assemble` assumes it).
-- ⛏ `POST …/actions/intake-pack` (or folded into baseline) → generates concept boards + opens the
-  concept decision.
-- `GET …/decisions` ✓ lists the open concept decision; ⛏ `POST …/decisions/{n}/resolve {choice}` to
-  record the pick — **not built** (only GET exists). ⛏ board screenshots need a static asset route.
+- `POST …/actions/baseline` ✓ (run the scrape ladder; `queued` → `baseline-ready`).
+- `POST …/actions/intake-pack` ✓ → generates concept boards + opens the concept decision.
+- `GET …/decisions` ✓ lists the open concept decision; `POST …/decisions/{n}/resolve {choice}` ✓
+  records the pick. ⛏ board screenshots still need a static asset route.
 
 ### Step 5 — Prototype preview  ✓
 ```
@@ -143,14 +141,14 @@ The engine stage machine drives what the customer sees (poll `GET /v1/projects/{
 ---
 
 ## 6 · API gaps the web app needs (the remaining backend work)
-Consolidated, actionable — these are control-plane additions, all decision-light + testable like the rest:
-1. `POST /v1/tenants` — self-serve tenant signup + token issuance (Step 0).
-2. `POST …/actions/baseline` — run the scrape ladder (`queued` → `baseline-ready`) (Step 4).
-3. `POST …/actions/intake-pack` — generate concept boards + open the concept decision (Step 4).
-4. `POST …/decisions/{n}/resolve {choice}` — record the concept pick (Step 4; GET already exists).
-5. Asset/intake endpoints — upload owner answers, deliverables, logo/photos (Step 7).
-6. Static asset route — serve concept-board screenshots + preview thumbnails (Step 4/5).
-7. `GET /v1/admin/launches` — cross-tenant reviewer queue (Step 2 / §2).
-8. Stripe integration — real `billing/checkout` + webhook (Step 2).
+Consolidated, actionable — control-plane additions. ✅ = built; ⛏ = remaining.
+1. ⛏ `POST /v1/tenants` — self-serve tenant signup + token issuance (Step 0).
+2. ✅ `POST …/actions/baseline` — run the scrape ladder (`queued` → `baseline-ready`) (Step 4).
+3. ✅ `POST …/actions/intake-pack` — generate concept boards + open the concept decision (Step 4).
+4. ✅ `POST …/decisions/{n}/resolve {choice}` — record the concept pick (Step 4).
+5. ⛏ Asset/intake endpoints — upload owner answers, deliverables, logo/photos (Step 7).
+6. ⛏ Static asset route — serve concept-board screenshots + preview thumbnails (Step 4/5).
+7. ⛏ `GET /v1/admin/launches` — cross-tenant reviewer queue (Step 2 / §2).
+8. ⛏ Stripe integration — real `billing/checkout` + webhook (Step 2).
 
-Items 2–4 + 7 are pure engine/API work (no external vendor) and the natural next backend increment.
+Remaining are mostly vendor/asset/admin surfaces; items 5–7 are still pure engine/API work.

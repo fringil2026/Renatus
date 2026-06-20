@@ -264,6 +264,53 @@ def test_async_action_with_thread_runner() -> None:
         tmp.cleanup()
 
 
+def test_baseline_action() -> None:
+    app, tmp = _app()
+    try:
+        app.store.create_project(Project(slug="acme", domain="https://acme.example", stage=Stage.QUEUED))
+        _verify(app, "acme")  # baseline is scrape-heavy -> ownership-gated
+        status, body = _post(app, "/v1/projects/acme/actions/baseline")
+        assert status == 202 and body["run"]["status"] == "succeeded"
+        _, proj = _get(app, "/v1/projects/acme")
+        assert proj["stage"] == "baseline-ready"
+    finally:
+        tmp.cleanup()
+
+
+def test_baseline_requires_ownership() -> None:
+    app, tmp = _app()
+    try:
+        app.store.create_project(Project(slug="acme", domain="https://acme.example", stage=Stage.QUEUED))
+        assert _post(app, "/v1/projects/acme/actions/baseline")[0] == 403  # unverified
+    finally:
+        tmp.cleanup()
+
+
+def test_intake_pack_action() -> None:
+    app, tmp = _app()
+    try:
+        app.store.create_project(Project(slug="acme", stage=Stage.BASELINE_READY))
+        status, body = _post(app, "/v1/projects/acme/actions/intake-pack")
+        assert status == 202 and body["run"]["status"] == "succeeded"
+    finally:
+        tmp.cleanup()
+
+
+def test_resolve_decision() -> None:
+    app, tmp = _app()
+    try:
+        app.store.create_project(Project(slug="acme", stage=Stage.BASELINE_READY))
+        app.store.create_decision("acme", "design concept", "question: which board?\n")
+        status, body = _post(app, "/v1/projects/acme/decisions/1/resolve", {"choice": "B"})
+        assert status == 200 and body["state"] == "RESOLVED"
+        # resolving again -> 409 (immutable)
+        assert _post(app, "/v1/projects/acme/decisions/1/resolve", {"choice": "C"})[0] == 409
+        # unknown decision -> 404
+        assert _post(app, "/v1/projects/acme/decisions/9/resolve", {"choice": "B"})[0] == 404
+    finally:
+        tmp.cleanup()
+
+
 def test_finish_action_advances_to_final() -> None:
     app, tmp = _app()
     try:

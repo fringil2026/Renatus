@@ -17,7 +17,7 @@ api/            control plane — framework-agnostic core + stdlib & FastAPI ada
         │
 engine/         headless, storage-agnostic rebuild engine (the moat)
   tenancy         Tenant + TenantStore (the multi-tenant identity registry)
-  orchestration   assemble / process_edits / diagnose / finish / cutover (gates · publish-always)
+  orchestration   baseline / intake-pack / assemble / process_edits / diagnose / finish / cutover
   transitions     stage machine (valid transitions + command availability)
   ownership       domain verification (DNS-TXT / meta-tag / HTTP-file) — the abuse gate
   launch          human-reviewed-launch gate (request/approve/reject) — gates cutover (ADR-0002 #2)

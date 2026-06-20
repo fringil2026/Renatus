@@ -13,6 +13,8 @@ from .models import Stage
 
 
 class Command(str, Enum):
+    BASELINE = "baseline"
+    INTAKE_PACK = "intake-pack"
     ASSEMBLE = "assemble"
     PROCESS_EDITS = "process-edits"
     DIAGNOSE = "diagnose"
@@ -24,7 +26,7 @@ class Command(str, Enum):
 
 # Forward stage transitions the pipeline may make (validation + UI). A no-op (src == dst) is allowed.
 ALLOWED_TRANSITIONS: dict[Stage, set[Stage]] = {
-    Stage.QUEUED: {Stage.SCRAPING, Stage.ERROR},
+    Stage.QUEUED: {Stage.SCRAPING, Stage.BASELINE_READY, Stage.ERROR},
     Stage.SCRAPING: {Stage.BASELINE_READY, Stage.ERROR},
     Stage.IMPORT_PENDING: {Stage.PROTOTYPE, Stage.ERROR},
     Stage.BASELINE_READY: {Stage.PROTOTYPE, Stage.ERROR},
@@ -41,6 +43,8 @@ _BUILT_STAGES = {Stage.PROTOTYPE, Stage.AWAITING_OWNER, Stage.ANSWERS_RECEIVED, 
 
 # Which stages each command may run at. DIAGNOSE is read-only assessment → allowed anywhere.
 COMMAND_STAGES: dict[Command, set[Stage]] = {
+    Command.BASELINE: {Stage.QUEUED, Stage.ERROR},
+    Command.INTAKE_PACK: {Stage.BASELINE_READY},
     Command.ASSEMBLE: {Stage.BASELINE_READY},
     Command.PROCESS_EDITS: set(_BUILT_STAGES),
     Command.DIAGNOSE: set(Stage),
