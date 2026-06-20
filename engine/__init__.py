@@ -1,0 +1,145 @@
+"""Web Studio rebuild engine — the headless, storage-agnostic core.
+
+Public surface:
+
+    from engine import (
+        ProjectStore, ArtifactStore, FilesystemProjectStore,
+        Project, Stage, Edit, EditState, Decision, DecisionState,
+        Incident, IncidentState, Report, Version, Catalog,
+        CatalogSource, CatalogOwner,
+    )
+
+See ``engine/README.md`` and ``docs/adr/0001-foundational-decisions.md``.
+"""
+
+from __future__ import annotations
+
+from .agent_sdk_driver import AgentSDKDriver
+from .driver import AgentResult, BuildDriver, LocalClaudeDriver, MockBuildDriver, is_transient_failure
+from .errors import EngineError, ImmutableTransition, ProjectExists, ReportExists
+from .fs_store import FilesystemArtifactStore, FilesystemProjectStore
+from .models import (
+    Catalog,
+    CatalogOwner,
+    CatalogSource,
+    Decision,
+    DecisionState,
+    Edit,
+    EditState,
+    Incident,
+    IncidentState,
+    Ownership,
+    OwnershipStatus,
+    Project,
+    Report,
+    Stage,
+    VerificationMethod,
+    Version,
+)
+from .ownership import (
+    CheckResult,
+    DnsResolver,
+    FakeDnsResolver,
+    FakeFetcher,
+    HttpFetcher,
+    NotVerifiedError,
+    SystemDnsResolver,
+    UrllibFetcher,
+    VerificationError,
+    challenge_instructions,
+    check_verification,
+    normalize_domain,
+    require_verified,
+    start_verification,
+)
+from .orchestration import (
+    CommandOutcome,
+    OrchestrationError,
+    PreconditionError,
+    assemble_prototype,
+    process_edits,
+    run_command,
+    run_diagnostic,
+)
+from .publish import MockPublisher, Publisher
+from .runner import InlineRunner, Runner, ThreadRunner
+from .runs import FilesystemRunStore, InMemoryRunStore, Run, RunStatus, RunStore
+from .sql_store import InMemoryArtifactStore, SqlProjectStore, SqlRunStore
+from .store import ArtifactStore, ProjectStore
+from .transitions import (
+    Command,
+    available_commands,
+    can_transition,
+    command_available,
+)
+
+__all__ = [
+    "AgentResult",
+    "AgentSDKDriver",
+    "ArtifactStore",
+    "BuildDriver",
+    "Catalog",
+    "CatalogOwner",
+    "CatalogSource",
+    "CheckResult",
+    "Command",
+    "CommandOutcome",
+    "Decision",
+    "DecisionState",
+    "DnsResolver",
+    "Edit",
+    "EditState",
+    "EngineError",
+    "FakeDnsResolver",
+    "FakeFetcher",
+    "FilesystemArtifactStore",
+    "FilesystemProjectStore",
+    "FilesystemRunStore",
+    "HttpFetcher",
+    "ImmutableTransition",
+    "Incident",
+    "IncidentState",
+    "InlineRunner",
+    "InMemoryArtifactStore",
+    "InMemoryRunStore",
+    "LocalClaudeDriver",
+    "MockBuildDriver",
+    "MockPublisher",
+    "NotVerifiedError",
+    "OrchestrationError",
+    "Ownership",
+    "OwnershipStatus",
+    "PreconditionError",
+    "Project",
+    "ProjectExists",
+    "ProjectStore",
+    "Publisher",
+    "Report",
+    "ReportExists",
+    "Run",
+    "RunStatus",
+    "RunStore",
+    "Runner",
+    "SqlProjectStore",
+    "SqlRunStore",
+    "Stage",
+    "SystemDnsResolver",
+    "ThreadRunner",
+    "UrllibFetcher",
+    "VerificationError",
+    "VerificationMethod",
+    "Version",
+    "assemble_prototype",
+    "available_commands",
+    "can_transition",
+    "challenge_instructions",
+    "check_verification",
+    "command_available",
+    "is_transient_failure",
+    "normalize_domain",
+    "process_edits",
+    "require_verified",
+    "run_command",
+    "run_diagnostic",
+    "start_verification",
+]
