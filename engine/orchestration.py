@@ -200,6 +200,27 @@ def run_diagnostic(
     )
 
 
+def run_finish(
+    store: ProjectStore,
+    driver: BuildDriver,
+    slug: str,
+    *,
+    publisher: Publisher,
+    now: str,
+) -> CommandOutcome:
+    """CLAUDE.md Command 2 — apply owner answers + finalize. Requires stage=answers-received."""
+    p = _require(store, slug)
+    _gate(p, Command.FINISH)
+    outcome = run_command(
+        store, driver, slug, f"Finish {slug}",
+        kind="finish", fail_flag="finish_failed",
+        publisher=publisher, now=now, report_kind="finish",
+    )
+    if outcome.ok:
+        store.set_stage(slug, Stage.FINAL, f"{now} finished — answers applied, final build")
+    return outcome
+
+
 def run_cutover(
     store: ProjectStore,
     driver: BuildDriver,

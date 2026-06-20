@@ -33,6 +33,7 @@ from engine import (  # noqa: E402
     command_available,
     process_edits,
     run_diagnostic,
+    run_finish,
 )
 
 
@@ -195,6 +196,34 @@ def test_process_edits_happy_path() -> None:
         assert out.ok
         assert out.preview_url == "https://ws-acme.pages.dev"
         assert any(r.kind == "process-edits" for r in store.list_reports("acme"))
+    finally:
+        tmp.cleanup()
+
+
+def test_finish_advances_to_final() -> None:
+    store, tmp = _store()
+    try:
+        _project(store, Stage.ANSWERS_RECEIVED)
+        out = run_finish(
+            store, MockBuildDriver(), "acme", publisher=MockPublisher(), now="2026-06-20-1200"
+        )
+        assert out.ok
+        assert store.get_project("acme").stage is Stage.FINAL
+        assert any(r.kind == "finish" for r in store.list_reports("acme"))
+    finally:
+        tmp.cleanup()
+
+
+def test_finish_wrong_stage_refused() -> None:
+    store, tmp = _store()
+    try:
+        _project(store, Stage.PROTOTYPE)
+        try:
+            run_finish(store, MockBuildDriver(), "acme", publisher=MockPublisher(), now="2026-06-20-1200")
+        except PreconditionError:
+            pass
+        else:
+            raise AssertionError("expected PreconditionError finishing before answers-received")
     finally:
         tmp.cleanup()
 

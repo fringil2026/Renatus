@@ -12,12 +12,15 @@ from pathlib import Path
 from engine import (
     FilesystemProjectStore,
     FilesystemRunStore,
+    FilesystemTenantStore,
     LocalClaudeDriver,
+    Tenant,
     ThreadRunner,
 )
 from engine.publish import Publisher, UnconfiguredPublisher
 
 from .core import Application
+from .tenancy import TenantRouter
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -54,3 +57,33 @@ def build_default_app(
         reviewer_token=os.environ.get("WS_REVIEWER_TOKEN"),  # ops approve/reject (ADR-0002 #2)
         enforce_billing=os.environ.get("WS_ENFORCE_BILLING", "0") != "0",  # paywall (ADR-0002 #4)
     )
+
+
+def build_tenant_router(*, root: str | Path | None = None) -> TenantRouter:
+    """Multi-tenant dev front controller: each tenant gets an isolated subtree under ``root``.
+
+    Uses a separate data root (``$WS_TENANTS_ROOT`` or ``<repo>/.data/tenants``) — NOT the studio's
+    ``clients/`` — so tenant data never mixes with the operator studio. Register tenants in
+    ``<root>/tenants.json`` (id → {api_token, …}); each tenant's projects live at ``<root>/<id>/``.
+    """
+    base = Path(root or os.environ.get("WS_TENANTS_ROOT") or (_REPO_ROOT / ".data" / "tenants"))
+    tenants = FilesystemTenantStore(base)
+    driver = LocalClaudeDriver(str(_REPO_ROOT))
+    enforce_ownership = os.environ.get("WS_ENFORCE_OWNERSHIP", "1") != "0"
+    enforce_billing = os.environ.get("WS_ENFORCE_BILLING", "0") != "0"
+    reviewer_token = os.environ.get("WS_REVIEWER_TOKEN")
+
+    def app_factory(tenant: Tenant) -> Application:
+        troot = base / tenant.id
+        return Application(
+            FilesystemProjectStore(troot),
+            driver=driver,
+            publisher=UnconfiguredPublisher(),
+            token=None,  # the router already authenticated the tenant
+            enforce_ownership=enforce_ownership,
+            runner=ThreadRunner(FilesystemRunStore(troot)),
+            reviewer_token=reviewer_token,
+            enforce_billing=enforce_billing,
+        )
+
+    return TenantRouter(tenants, app_factory)

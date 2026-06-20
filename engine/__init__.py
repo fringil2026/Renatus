@@ -81,12 +81,19 @@ from .orchestration import (
     run_command,
     run_cutover,
     run_diagnostic,
+    run_finish,
 )
 from .publish import MockPublisher, Publisher
 from .runner import InlineRunner, Runner, ThreadRunner
 from .runs import FilesystemRunStore, InMemoryRunStore, Run, RunStatus, RunStore
 from .sql_store import InMemoryArtifactStore, SqlProjectStore, SqlRunStore
 from .store import ArtifactStore, ProjectStore
+from .tenancy import (
+    FilesystemTenantStore,
+    InMemoryTenantStore,
+    Tenant,
+    TenantStore,
+)
 from .transitions import (
     Command,
     available_commands,
@@ -150,8 +157,12 @@ __all__ = [
     "Runner",
     "SqlProjectStore",
     "SqlRunStore",
+    "FilesystemTenantStore",
+    "InMemoryTenantStore",
     "Stage",
     "SystemDnsResolver",
+    "Tenant",
+    "TenantStore",
     "ThreadRunner",
     "UrllibFetcher",
     "UsageSummary",
@@ -178,6 +189,7 @@ __all__ = [
     "run_command",
     "run_cutover",
     "run_diagnostic",
+    "run_finish",
     "set_plan",
     "start_verification",
     "summarize_runs",

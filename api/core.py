@@ -64,6 +64,7 @@ from engine import (
     require_verified,
     run_cutover,
     run_diagnostic,
+    run_finish,
     set_plan,
     start_verification,
     summarize_runs,
@@ -211,6 +212,7 @@ class Application:
         self._route("POST", "/v1/projects/{slug}/actions/assemble", _h_assemble)
         self._route("POST", "/v1/projects/{slug}/actions/process-edits", _h_process_edits)
         self._route("POST", "/v1/projects/{slug}/actions/diagnose", _h_diagnose)
+        self._route("POST", "/v1/projects/{slug}/actions/finish", _h_finish)
         self._route("POST", "/v1/projects/{slug}/actions/cutover", _h_cutover)
 
     def _match(self, method: str, path: str) -> tuple[_Handler, dict[str, str]] | None:
@@ -552,6 +554,12 @@ def _h_process_edits(app: Application, req: Request, p: dict[str, str]) -> Respo
 def _h_diagnose(app: Application, req: Request, p: dict[str, str]) -> Response:
     app._require_project(p["slug"])
     return _enqueue(app, p["slug"], "diagnostic", run_diagnostic)
+
+
+def _h_finish(app: Application, req: Request, p: dict[str, str]) -> Response:
+    project = app._require_project(p["slug"])
+    _precheck_stage(project, Command.FINISH)         # 409 unless stage=answers-received
+    return _enqueue(app, p["slug"], "finish", run_finish, publisher=app._publisher)
 
 
 def _h_cutover(app: Application, req: Request, p: dict[str, str]) -> Response:

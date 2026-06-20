@@ -10,12 +10,14 @@ locked choices: **docs/adr/0001-foundational-decisions.md**.
 
 ```
 api/            control plane — framework-agnostic core + stdlib & FastAPI adapters
-  core.py         routing · bearer-auth seam · ownership gate · async actions (202 + run)
+  tenancy.py      TenantRouter front controller — token -> tenant -> isolated Application
+  core.py         routing · bearer-auth seam · ownership/launch/paywall gates · async actions
   server.py       stdlib http.server dev adapter   |  fastapi_app.py  production adapter
-  deps.py         wires concrete engine impls for the dev server
+  deps.py         wires concrete engine impls (build_default_app / build_tenant_router)
         │
 engine/         headless, storage-agnostic rebuild engine (the moat)
-  orchestration   assemble_prototype / process_edits / run_diagnostic (gates · publish-always)
+  tenancy         Tenant + TenantStore (the multi-tenant identity registry)
+  orchestration   assemble / process_edits / diagnose / finish / cutover (gates · publish-always)
   transitions     stage machine (valid transitions + command availability)
   ownership       domain verification (DNS-TXT / meta-tag / HTTP-file) — the abuse gate
   launch          human-reviewed-launch gate (request/approve/reject) — gates cutover (ADR-0002 #2)
@@ -54,7 +56,7 @@ Postgres, and faster DNS respectively — none are needed for the core or the te
 | Claude execution | `LocalClaudeDriver` (`claude -p`) | `AgentSDKDriver` in a per-tenant sandbox (`workers/`) |
 | Async runs | `ThreadRunner` (durable to disk) | Temporal/Inngest `Runner` |
 | HTTP | stdlib `api/server.py` | `api/fastapi_app.py` + uvicorn |
-| Multi-tenancy | single store; auth seam resolves caller | per-tenant store scoped from auth context |
+| Multi-tenancy | `TenantRouter` + per-tenant isolated stores (filesystem subtree) | tenant-filtered SQL store; external token issuer (Clerk/Auth0/Supabase) feeds the same token→tenant seam |
 
 ## Where to start reading
 New to this? Read **PRODUCT-PLAN.md** (the why), then `engine/store.py` (the central seam), then

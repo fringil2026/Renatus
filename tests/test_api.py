@@ -264,6 +264,27 @@ def test_async_action_with_thread_runner() -> None:
         tmp.cleanup()
 
 
+def test_finish_action_advances_to_final() -> None:
+    app, tmp = _app()
+    try:
+        app.store.create_project(Project(slug="acme", stage=Stage.ANSWERS_RECEIVED))
+        status, body = _post(app, "/v1/projects/acme/actions/finish")
+        assert status == 202 and body["run"]["status"] == "succeeded"
+        _, proj = _get(app, "/v1/projects/acme")
+        assert proj["stage"] == "final"
+    finally:
+        tmp.cleanup()
+
+
+def test_finish_wrong_stage_conflicts() -> None:
+    app, tmp = _app()
+    try:
+        app.store.create_project(Project(slug="acme", stage=Stage.PROTOTYPE))
+        assert _post(app, "/v1/projects/acme/actions/finish")[0] == 409
+    finally:
+        tmp.cleanup()
+
+
 def test_launch_review_then_cutover() -> None:
     app, tmp = _app()
     try:
