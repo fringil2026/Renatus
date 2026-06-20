@@ -193,3 +193,26 @@ def run_diagnostic(
         kind="diagnostic", fail_flag="diagnostic_failed",
         publisher=None, now=now, report_kind="diagnostic",
     )
+
+
+def run_cutover(
+    store: ProjectStore,
+    driver: BuildDriver,
+    slug: str,
+    *,
+    now: str,
+) -> CommandOutcome:
+    """CLAUDE.md Command 3 — cutover prechecks. Requires stage=final. No publish.
+
+    The launch-review approval gate (ADR-0002 #2) is enforced by the control plane before this runs;
+    the actual DNS/indexable go-live remains a human step (studio Hard rule)."""
+    p = _require(store, slug)
+    _gate(p, Command.CUTOVER)
+    outcome = run_command(
+        store, driver, slug, f"Run cutover prechecks for {slug}",
+        kind="cutover", fail_flag="cutover_failed",
+        publisher=None, now=now, report_kind="cutover",
+    )
+    if outcome.ok:
+        store.set_stage(slug, Stage.CUTOVER_CHECKED, f"{now} cutover prechecks passed")
+    return outcome

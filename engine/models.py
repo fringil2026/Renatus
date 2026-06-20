@@ -94,6 +94,15 @@ class VerificationMethod(str, Enum):
     OAUTH = "oauth"          # host OAuth (future — not implemented in the skeleton)
 
 
+class LaunchStatus(str, Enum):
+    """Human-review state before go-live (ADR-0002 #2: self-serve build, reviewed launch)."""
+
+    NONE = "none"          # no review requested yet
+    PENDING = "pending"    # customer requested launch; awaiting a reviewer
+    APPROVED = "approved"  # a reviewer signed off — cutover may proceed
+    REJECTED = "rejected"  # a reviewer blocked it (with a reason); customer must address + re-request
+
+
 # --------------------------------------------------------------------------- #
 # Value objects
 # --------------------------------------------------------------------------- #
@@ -158,6 +167,39 @@ class Ownership:
 
 
 @dataclass(slots=True)
+class LaunchReview:
+    """The human-review record gating go-live."""
+
+    status: LaunchStatus = LaunchStatus.NONE
+    requested_at: str = ""
+    decided_at: str = ""
+    reviewer: str = ""  # who approved/rejected (identity from the reviewer auth context)
+    note: str = ""      # rejection reason / approval note
+
+    @property
+    def is_approved(self) -> bool:
+        return self.status is LaunchStatus.APPROVED
+
+    def to_dict(self) -> dict[str, Any]:
+        d: dict[str, Any] = {"status": self.status.value}
+        for k in ("requested_at", "decided_at", "reviewer", "note"):
+            v = getattr(self, k)
+            if v:
+                d[k] = v
+        return d
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "LaunchReview":
+        return cls(
+            status=LaunchStatus(d.get("status", "none")),
+            requested_at=d.get("requested_at", ""),
+            decided_at=d.get("decided_at", ""),
+            reviewer=d.get("reviewer", ""),
+            note=d.get("note", ""),
+        )
+
+
+@dataclass(slots=True)
 class Version:
     """A single multi-version build (SYSTEM.md §3c). One entry per ``status.json`` ``versions[]``."""
 
@@ -208,7 +250,7 @@ class Version:
 _CORE_KEYS = {
     "name", "domain", "stage", "design_mode", "concept", "created",
     "log", "preview_url", "preview_published_at", "preview_stale",
-    "versions", "catalog", "ownership",
+    "versions", "catalog", "ownership", "launch_review",
 }
 
 
@@ -230,6 +272,7 @@ class Project:
     versions: list[Version] = field(default_factory=list)
     catalog: Catalog | None = None
     ownership: Ownership | None = None
+    launch_review: LaunchReview | None = None
     # Any status.json key we don't model explicitly, preserved verbatim for round-tripping.
     extra: dict[str, Any] = field(default_factory=dict)
 
@@ -258,6 +301,8 @@ class Project:
             d["catalog"] = self.catalog.to_dict()
         if self.ownership is not None:
             d["ownership"] = self.ownership.to_dict()
+        if self.launch_review is not None:
+            d["launch_review"] = self.launch_review.to_dict()
         return d
 
     @classmethod
@@ -265,6 +310,9 @@ class Project:
         extra = {k: v for k, v in d.items() if k not in _CORE_KEYS}
         catalog = Catalog.from_dict(d["catalog"]) if isinstance(d.get("catalog"), dict) else None
         ownership = Ownership.from_dict(d["ownership"]) if isinstance(d.get("ownership"), dict) else None
+        launch_review = (
+            LaunchReview.from_dict(d["launch_review"]) if isinstance(d.get("launch_review"), dict) else None
+        )
         versions = [Version.from_dict(v) for v in d.get("versions", []) if isinstance(v, dict)]
         return cls(
             slug=slug,
@@ -281,6 +329,7 @@ class Project:
             versions=versions,
             catalog=catalog,
             ownership=ownership,
+            launch_review=launch_review,
             extra=extra,
         )
 

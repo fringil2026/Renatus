@@ -51,4 +51,5 @@ def build_default_app(
         token=token if token is not None else os.environ.get("WS_API_TOKEN"),
         enforce_ownership=enforce_ownership,
         runner=runner,
+        reviewer_token=os.environ.get("WS_REVIEWER_TOKEN"),  # ops approve/reject (ADR-0002 #2)
     )

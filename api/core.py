@@ -31,6 +31,9 @@ from engine import (
     Incident,
     InlineRunner,
     InMemoryRunStore,
+    LaunchError,
+    LaunchReview,
+    NotApprovedError,
     NotVerifiedError,
     Ownership,
     PreconditionError,
@@ -45,12 +48,17 @@ from engine import (
     UrllibFetcher,
     VerificationError,
     VerificationMethod,
+    approve,
     assemble_prototype,
     challenge_instructions,
     check_verification,
     command_available,
     process_edits,
+    reject,
+    request_review,
+    require_launch_approved,
     require_verified,
+    run_cutover,
     run_diagnostic,
     start_verification,
 )
@@ -140,11 +148,16 @@ class Application:
         fetcher: HttpFetcher | None = None,
         enforce_ownership: bool = True,
         runner: Runner | None = None,
+        reviewer_token: str | None = None,
     ) -> None:
         self._store = store
         self._driver = driver
         self._publisher = publisher
         self._token = token  # None = dev mode (auth disabled)
+        # Reviewer (ops) authz for launch approve/reject — distinct from the customer token, so a
+        # customer can't approve their own launch (ADR-0002 #2). None = dev (no reviewer gate).
+        # Production replaces this with real RBAC.
+        self._reviewer_token = reviewer_token
         self._now = now_fn
         # The durable-workflow seam: actions are enqueued and return 202 + a run record. Default is
         # the inline runner (synchronous, in-memory) — the dev server / production inject a
@@ -177,9 +190,14 @@ class Application:
         self._route("POST", "/v1/projects/{slug}/ownership/verify", _h_ownership_verify)
         self._route("GET", "/v1/projects/{slug}/runs", _h_list_runs)
         self._route("GET", "/v1/projects/{slug}/runs/{run_id}", _h_get_run)
+        self._route("GET", "/v1/projects/{slug}/launch", _h_launch_status)
+        self._route("POST", "/v1/projects/{slug}/launch/request", _h_launch_request)
+        self._route("POST", "/v1/projects/{slug}/launch/approve", _h_launch_approve)
+        self._route("POST", "/v1/projects/{slug}/launch/reject", _h_launch_reject)
         self._route("POST", "/v1/projects/{slug}/actions/assemble", _h_assemble)
         self._route("POST", "/v1/projects/{slug}/actions/process-edits", _h_process_edits)
         self._route("POST", "/v1/projects/{slug}/actions/diagnose", _h_diagnose)
+        self._route("POST", "/v1/projects/{slug}/actions/cutover", _h_cutover)
 
     def _match(self, method: str, path: str) -> tuple[_Handler, dict[str, str]] | None:
         segs = [s for s in path.split("/") if s]
@@ -229,6 +247,10 @@ class Application:
             return Response(409, {"error": str(e)})
         except NotVerifiedError as e:
             return Response(403, {"error": str(e)})
+        except NotApprovedError as e:
+            return Response(403, {"error": str(e)})
+        except LaunchError as e:
+            return Response(409, {"error": str(e)})
         except VerificationError as e:
             return Response(400, {"error": str(e)})
         except KeyError as e:
@@ -414,6 +436,55 @@ def _gate_ownership(app: Application, project: Project) -> None:
         require_verified(project)  # raises NotVerifiedError -> 403
 
 
+# -- launch review (human-reviewed launch, ADR-0002 #2) -------------------- #
+def _launch_json(lr: LaunchReview | None) -> dict[str, Any]:
+    return lr.to_dict() if lr is not None else {"status": "none"}
+
+
+def _require_reviewer(app: Application, req: Request) -> str:
+    """Authorize an ops reviewer (distinct from the customer). Returns a reviewer identity."""
+    if app._reviewer_token is None:
+        return "dev-reviewer"  # dev mode — no reviewer gate
+    if (req.header("authorization") or "") != f"Bearer {app._reviewer_token}":
+        raise ApiError(403, "reviewer authorization required to approve/reject a launch")
+    return "reviewer"
+
+
+def _h_launch_status(app: Application, req: Request, p: dict[str, str]) -> Response:
+    project = app._require_project(p["slug"])
+    return Response(200, {"launch": _launch_json(project.launch_review)})
+
+
+def _h_launch_request(app: Application, req: Request, p: dict[str, str]) -> Response:
+    project = app._require_project(p["slug"])
+    project.launch_review = request_review(project.launch_review, now=app._now())
+    app.store.save_project(project)
+    return Response(200, {"launch": _launch_json(project.launch_review)})
+
+
+def _h_launch_approve(app: Application, req: Request, p: dict[str, str]) -> Response:
+    project = app._require_project(p["slug"])
+    reviewer = _require_reviewer(app, req)
+    body = req.body or {}
+    project.launch_review = approve(
+        project.launch_review, reviewer=reviewer, now=app._now(), note=body.get("note", "")
+    )
+    app.store.save_project(project)
+    return Response(200, {"launch": _launch_json(project.launch_review)})
+
+
+def _h_launch_reject(app: Application, req: Request, p: dict[str, str]) -> Response:
+    project = app._require_project(p["slug"])
+    reviewer = _require_reviewer(app, req)
+    body = req.body or {}
+    note = body.get("note") or body.get("reason")
+    if not note:
+        raise ApiError(400, "a rejection requires a 'note' (reason)")
+    project.launch_review = reject(project.launch_review, reviewer=reviewer, now=app._now(), note=note)
+    app.store.save_project(project)
+    return Response(200, {"launch": _launch_json(project.launch_review)})
+
+
 def _precheck_stage(project: Project, command: Command) -> None:
     """Synchronous stage gate, so the common precondition errors return 4xx instead of a failed run.
 
@@ -443,3 +514,10 @@ def _h_process_edits(app: Application, req: Request, p: dict[str, str]) -> Respo
 def _h_diagnose(app: Application, req: Request, p: dict[str, str]) -> Response:
     app._require_project(p["slug"])
     return _enqueue(app, p["slug"], "diagnostic", run_diagnostic)
+
+
+def _h_cutover(app: Application, req: Request, p: dict[str, str]) -> Response:
+    project = app._require_project(p["slug"])
+    _precheck_stage(project, Command.CUTOVER)        # 409 unless stage=final
+    require_launch_approved(project)                 # 403 unless a reviewer approved (ADR-0002 #2)
+    return _enqueue(app, p["slug"], "cutover", run_cutover)

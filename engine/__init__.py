@@ -28,6 +28,8 @@ from .models import (
     EditState,
     Incident,
     IncidentState,
+    LaunchReview,
+    LaunchStatus,
     Ownership,
     OwnershipStatus,
     Project,
@@ -35,6 +37,14 @@ from .models import (
     Stage,
     VerificationMethod,
     Version,
+)
+from .launch import (
+    LaunchError,
+    NotApprovedError,
+    approve,
+    reject,
+    request_review,
+    require_launch_approved,
 )
 from .ownership import (
     CheckResult,
@@ -59,6 +69,7 @@ from .orchestration import (
     assemble_prototype,
     process_edits,
     run_command,
+    run_cutover,
     run_diagnostic,
 )
 from .publish import MockPublisher, Publisher
@@ -102,9 +113,13 @@ __all__ = [
     "InlineRunner",
     "InMemoryArtifactStore",
     "InMemoryRunStore",
+    "LaunchError",
+    "LaunchReview",
+    "LaunchStatus",
     "LocalClaudeDriver",
     "MockBuildDriver",
     "MockPublisher",
+    "NotApprovedError",
     "NotVerifiedError",
     "OrchestrationError",
     "Ownership",
@@ -129,6 +144,7 @@ __all__ = [
     "VerificationError",
     "VerificationMethod",
     "Version",
+    "approve",
     "assemble_prototype",
     "available_commands",
     "can_transition",
@@ -138,8 +154,12 @@ __all__ = [
     "is_transient_failure",
     "normalize_domain",
     "process_edits",
+    "reject",
+    "request_review",
+    "require_launch_approved",
     "require_verified",
     "run_command",
+    "run_cutover",
     "run_diagnostic",
     "start_verification",
 ]

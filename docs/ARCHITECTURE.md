@@ -18,6 +18,7 @@ engine/         headless, storage-agnostic rebuild engine (the moat)
   orchestration   assemble_prototype / process_edits / run_diagnostic (gates · publish-always)
   transitions     stage machine (valid transitions + command availability)
   ownership       domain verification (DNS-TXT / meta-tag / HTTP-file) — the abuse gate
+  launch          human-reviewed-launch gate (request/approve/reject) — gates cutover (ADR-0002 #2)
   runner + runs   durable-workflow seam (InlineRunner / ThreadRunner; Run + RunStore)
   driver          BuildDriver seam: LocalClaudeDriver (claude -p) · AgentSDKDriver
   publish         Publisher seam (studio-owned deploy net)

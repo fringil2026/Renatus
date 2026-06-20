@@ -24,6 +24,10 @@ fastapi_app.py  FastAPI adapter (ADR-0001 §2 production target; import-guarded)
   DNS-TXT / meta-tag / HTTP-file proof of domain control (`engine.ownership`). Expensive actions
   (assemble, process-edits) are **gated behind verified ownership** → `403` until verified;
   `diagnose` stays open (the free lead-gen). Toggle with `enforce_ownership` / `$WS_ENFORCE_OWNERSHIP`.
+- ✅ Launch review (ADR-0002 #2): `GET /v1/projects/{slug}/launch`,
+  `POST .../launch/{request,approve,reject}` — customer requests launch, an **ops reviewer** approves
+  (separate `reviewer_token` / `$WS_REVIEWER_TOKEN`, so a customer can't approve their own). The
+  `cutover` action is **gated on an approved launch** → `403` until approved.
 - ✅ Auth seam: bearer-token check (dev mode = off when no token); `/healthz` open
 - ✅ Tested at the dispatch level (`tests/test_api.py`, 10/10) + a real-HTTP smoke of the dev server
 

@@ -264,6 +264,72 @@ def test_async_action_with_thread_runner() -> None:
         tmp.cleanup()
 
 
+def test_launch_review_then_cutover() -> None:
+    app, tmp = _app()
+    try:
+        app.store.create_project(Project(slug="acme", stage=Stage.FINAL))
+        # cutover blocked before approval
+        status, body = _post(app, "/v1/projects/acme/actions/cutover")
+        assert status == 403 and "approve" in body["error"].lower()
+        # customer requests launch -> pending
+        status, body = _post(app, "/v1/projects/acme/launch/request")
+        assert status == 200 and body["launch"]["status"] == "pending"
+        # reviewer approves (dev mode: no reviewer token)
+        status, body = _post(app, "/v1/projects/acme/launch/approve", {"note": "ship it"})
+        assert status == 200 and body["launch"]["status"] == "approved"
+        # cutover now runs -> 202 run succeeded, stage advances
+        status, body = _post(app, "/v1/projects/acme/actions/cutover")
+        assert status == 202 and body["run"]["status"] == "succeeded"
+        _, proj = _get(app, "/v1/projects/acme")
+        assert proj["stage"] == "cutover-checked"
+    finally:
+        tmp.cleanup()
+
+
+def test_cutover_wrong_stage_conflicts() -> None:
+    app, tmp = _app()
+    try:
+        app.store.create_project(Project(slug="acme", stage=Stage.PROTOTYPE))
+        status, _ = _post(app, "/v1/projects/acme/actions/cutover")
+        assert status == 409  # not at stage=final
+    finally:
+        tmp.cleanup()
+
+
+def test_launch_reject_requires_note() -> None:
+    app, tmp = _app()
+    try:
+        app.store.create_project(Project(slug="acme", stage=Stage.FINAL))
+        _post(app, "/v1/projects/acme/launch/request")
+        status, body = _post(app, "/v1/projects/acme/launch/reject", {})
+        assert status == 400 and "note" in body["error"].lower()
+        status, body = _post(app, "/v1/projects/acme/launch/reject", {"note": "upscaled hero"})
+        assert status == 200 and body["launch"]["status"] == "rejected"
+    finally:
+        tmp.cleanup()
+
+
+def test_reviewer_token_separates_customer_from_ops() -> None:
+    # reviewer_token set, customer auth off: approve needs the reviewer bearer.
+    tmp = tempfile.TemporaryDirectory()
+    try:
+        store = FilesystemProjectStore(Path(tmp.name))
+        app = Application(
+            store, driver=MockBuildDriver(), publisher=MockPublisher(), now_fn=lambda: _NOW,
+            resolver=FakeDnsResolver(), fetcher=FakeFetcher(), reviewer_token="rev-secret",
+        )
+        store.create_project(Project(slug="acme", stage=Stage.FINAL))
+        _post(app, "/v1/projects/acme/launch/request")
+        status, _ = _post(app, "/v1/projects/acme/launch/approve")  # no reviewer creds
+        assert status == 403
+        status, body = _post(
+            app, "/v1/projects/acme/launch/approve", headers={"Authorization": "Bearer rev-secret"}
+        )
+        assert status == 200 and body["launch"]["status"] == "approved"
+    finally:
+        tmp.cleanup()
+
+
 def test_auth_enforced_when_token_set() -> None:
     app, tmp = _app(token="secret")
     try:
