@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "web-studio"
+version = "0.1.0"
+description = "Web Studio — headless website-rebuild engine + control-plane API (SaaS foundation)"
+requires-python = ">=3.10"
+# The engine + dev API run on the standard library alone. Heavier surfaces are optional extras so
+# the core stays installable (and testable) anywhere — see PRODUCT-PLAN.md / docs/adr/0001.
+dependencies = []
+
+[project.optional-dependencies]
+api = ["fastapi>=0.110", "uvicorn>=0.29"]      # production HTTP adapter (api/fastapi_app.py)
+agent = ["claude-agent-sdk>=0.1"]               # AgentSDKDriver (engine/agent_sdk_driver.py)
+postgres = ["psycopg[binary]>=3.1"]             # SqlProjectStore/SqlRunStore on Postgres
+dns = ["dnspython>=2.4"]                         # SystemDnsResolver (faster than dig/nslookup)
+dev = ["pytest>=8"]
+
+[tool.setuptools]
+packages = ["engine", "api"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# The live Agent-SDK probe is a standalone script, not a pytest test; it's opt-in via env.
+addopts = "-q --ignore=tests/smoke_agent_sdk.py"
