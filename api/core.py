@@ -228,6 +228,7 @@ class Application:
         self._route("POST", "/v1/projects/{slug}/actions/assemble", _h_assemble)
         self._route("POST", "/v1/projects/{slug}/actions/process-edits", _h_process_edits)
         self._route("POST", "/v1/projects/{slug}/actions/diagnose", _h_diagnose)
+        self._route("POST", "/v1/projects/{slug}/answers", _h_submit_answers)
         self._route("POST", "/v1/projects/{slug}/actions/finish", _h_finish)
         self._route("POST", "/v1/projects/{slug}/actions/cutover", _h_cutover)
 
@@ -640,6 +641,18 @@ def _h_process_edits(app: Application, req: Request, p: dict[str, str]) -> Respo
 def _h_diagnose(app: Application, req: Request, p: dict[str, str]) -> Response:
     app._require_project(p["slug"])
     return _enqueue(app, p["slug"], "diagnostic", run_diagnostic)
+
+
+def _h_submit_answers(app: Application, req: Request, p: dict[str, str]) -> Response:
+    """Customer submits the owner questionnaire → stores it + advances to answers-received (funnel Step 7)."""
+    project = app._require_project(p["slug"])
+    _precheck_stage(project, Command.SUBMIT_ANSWERS)   # 409 unless prototype / awaiting-owner
+    content = (req.body or {}).get("content")
+    if not content:
+        raise ApiError(400, "field 'content' is required (the owner's answers)")
+    app.store.artifacts(p["slug"]).put("02-intake/owner-answers.txt", content.encode())
+    app.store.set_stage(p["slug"], Stage.ANSWERS_RECEIVED, f"{app._now()} owner answers received")
+    return Response(200, _project_json(app._require_project(p["slug"])))
 
 
 def _h_finish(app: Application, req: Request, p: dict[str, str]) -> Response:

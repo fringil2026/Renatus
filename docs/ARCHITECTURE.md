@@ -38,7 +38,7 @@ the production swap.
 ## Run it
 
 ```sh
-python3 tests/run_all.py                 # whole suite (57 tests, no deps)
+python3 tests/run_all.py                 # whole suite (no deps); incl. the full-funnel golden path
 python3 -m api.server                     # dev control-plane API on :8099 (stdlib, no deps)
 WS_API_TOKEN=secret python3 -m api.server # with bearer auth
 AGENT_SDK_SMOKE=1 python3 tests/smoke_agent_sdk.py   # opt-in: live Claude via the Agent SDK

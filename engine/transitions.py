@@ -18,6 +18,7 @@ class Command(str, Enum):
     ASSEMBLE = "assemble"
     PROCESS_EDITS = "process-edits"
     DIAGNOSE = "diagnose"
+    SUBMIT_ANSWERS = "submit-answers"
     FINISH = "finish"
     CUTOVER = "cutover"
     FULL_BUILD = "full-build"
@@ -48,6 +49,7 @@ COMMAND_STAGES: dict[Command, set[Stage]] = {
     Command.ASSEMBLE: {Stage.BASELINE_READY},
     Command.PROCESS_EDITS: set(_BUILT_STAGES),
     Command.DIAGNOSE: set(Stage),
+    Command.SUBMIT_ANSWERS: {Stage.PROTOTYPE, Stage.AWAITING_OWNER},
     Command.FINISH: {Stage.ANSWERS_RECEIVED},
     Command.CUTOVER: {Stage.FINAL},
     Command.FULL_BUILD: {Stage.BASELINE_READY, *(_BUILT_STAGES)},

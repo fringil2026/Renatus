@@ -84,8 +84,8 @@ Prove you own yoursite.com:  ( ) DNS TXT  ( ) meta tag  ( ) /.well-known file
 ```
 Questionnaire (22 Qs) · upload logo / product photos / hours → [ Finish my site ]
 ```
-- `POST /v1/projects/{slug}/assets {path, content_b64}` ✓ — upload owner answers
-  (`02-intake/owner-answers.txt`), photos, logo, deliverables; list via `GET …/assets`.
+- `POST /v1/projects/{slug}/answers {content}` ✓ — submit the questionnaire; stores it + advances
+  `awaiting-owner` → `answers-received`. Photos/logo/deliverables via `POST …/assets` ✓.
 - `POST /v1/projects/{slug}/actions/finish` ✓ (stage `answers-received` → `final`).
 
 ### Step 8 — Request launch → reviewed → go live (decision #2)
@@ -107,7 +107,9 @@ Pending launches:
 ```
 - `GET /v1/admin/launches?status=pending` ✓ — the **cross-tenant** review queue (platform-admin
   token), so ops sees pending launches across all tenants.
-- `POST …/launch/approve` / `…/launch/reject {note}` ✓ (require the reviewer bearer).
+- `POST …/launch/approve` / `…/launch/reject {note}` ✓ (require the reviewer bearer). ⛏ Note: these
+  are tenant-scoped today (work as-is single-tenant; tested in the golden path). In multi-tenant, ops
+  approval should move to an admin route (cross-tenant) since a reviewer isn't a tenant — small follow-up.
 
 ---
 
