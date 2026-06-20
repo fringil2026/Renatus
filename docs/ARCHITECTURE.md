@@ -12,7 +12,7 @@ locked choices: **docs/adr/0001-foundational-decisions.md**.
 api/            control plane — framework-agnostic core + stdlib & FastAPI adapters
   tenancy.py      TenantRouter — token -> tenant -> isolated Application; + platform-admin
                     (tenant signup, cross-tenant launch queue) behind an admin token
-  core.py         routing · bearer-auth seam · ownership/launch/paywall gates · async actions
+  core.py         routing · bearer-auth seam · ownership/launch/paywall gates · async actions · assets
   server.py       stdlib http.server dev adapter   |  fastapi_app.py  production adapter
   deps.py         wires concrete engine impls (build_default_app / build_tenant_router)
         │

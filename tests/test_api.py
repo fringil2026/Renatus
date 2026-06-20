@@ -10,6 +10,7 @@ without installing FastAPI/uvicorn. Never touches real client data.
 
 from __future__ import annotations
 
+import base64
 import sys
 import tempfile
 from pathlib import Path
@@ -394,6 +395,44 @@ def test_reviewer_token_separates_customer_from_ops() -> None:
             app, "/v1/projects/acme/launch/approve", headers={"Authorization": "Bearer rev-secret"}
         )
         assert status == 200 and body["launch"]["status"] == "approved"
+    finally:
+        tmp.cleanup()
+
+
+def test_asset_upload_list_download() -> None:
+    app, tmp = _app()
+    try:
+        app.store.create_project(Project(slug="acme"))
+        content = b'{"pages": 3}'
+        b64 = base64.b64encode(content).decode()
+        status, body = _post(
+            app, "/v1/projects/acme/assets", {"path": "00-source/crawl.json", "content_b64": b64}
+        )
+        assert status == 201 and body["size"] == len(content)
+
+        status, body = _get(app, "/v1/projects/acme/assets", query={"prefix": "00-source"})
+        assert "00-source/crawl.json" in body["assets"]
+
+        # download returns raw bytes + a guessed content type (not JSON-wrapped)
+        resp = app.dispatch(
+            Request(method="GET", path="/v1/projects/acme/asset", query={"key": "00-source/crawl.json"})
+        )
+        assert resp.status == 200 and resp.raw == content and resp.content_type == "application/json"
+
+        # missing asset -> 404
+        resp = app.dispatch(Request(method="GET", path="/v1/projects/acme/asset", query={"key": "nope"}))
+        assert resp.status == 404
+    finally:
+        tmp.cleanup()
+
+
+def test_asset_upload_validation() -> None:
+    app, tmp = _app()
+    try:
+        app.store.create_project(Project(slug="acme"))
+        assert _post(app, "/v1/projects/acme/assets", {"path": "x"})[0] == 400          # no content
+        assert _post(app, "/v1/projects/acme/assets", {"content_b64": "AAAA"})[0] == 400  # no path
+        assert _post(app, "/v1/projects/acme/assets", {"path": "x", "content_b64": "!!"})[0] == 400  # bad b64
     finally:
         tmp.cleanup()
 

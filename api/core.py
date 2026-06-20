@@ -14,6 +14,9 @@ in real auth and a per-tenant store without touching the handlers.
 
 from __future__ import annotations
 
+import base64
+import binascii
+import mimetypes
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -99,7 +102,11 @@ class Request:
 @dataclass(slots=True)
 class Response:
     status: int
-    body: dict[str, Any]
+    body: dict[str, Any] = field(default_factory=dict)
+    # For binary/static responses (serving an artifact). When ``raw`` is set, adapters send these
+    # bytes with ``content_type`` instead of JSON-encoding ``body``.
+    raw: bytes | None = None
+    content_type: str = "application/json"
 
 
 class ApiError(Exception):
@@ -201,6 +208,9 @@ class Application:
         self._route("POST", "/v1/projects/{slug}/decisions/{n}/resolve", _h_resolve_decision)
         self._route("GET", "/v1/projects/{slug}/incidents", _h_list_incidents)
         self._route("GET", "/v1/projects/{slug}/reports", _h_list_reports)
+        self._route("POST", "/v1/projects/{slug}/assets", _h_upload_asset)
+        self._route("GET", "/v1/projects/{slug}/assets", _h_list_assets)
+        self._route("GET", "/v1/projects/{slug}/asset", _h_get_asset)
         self._route("GET", "/v1/projects/{slug}/ownership", _h_ownership_status)
         self._route("POST", "/v1/projects/{slug}/ownership/challenge", _h_ownership_challenge)
         self._route("POST", "/v1/projects/{slug}/ownership/verify", _h_ownership_verify)
@@ -382,6 +392,49 @@ def _h_list_incidents(app: Application, req: Request, p: dict[str, str]) -> Resp
 def _h_list_reports(app: Application, req: Request, p: dict[str, str]) -> Response:
     app._require_project(p["slug"])
     return Response(200, {"reports": [_report_json(r) for r in app.store.list_reports(p["slug"])]})
+
+
+# -- assets (intake uploads + serving, over the project ArtifactStore) ----- #
+def _h_upload_asset(app: Application, req: Request, p: dict[str, str]) -> Response:
+    app._require_project(p["slug"])
+    body = req.body or {}
+    path = body.get("path")
+    if not path:
+        raise ApiError(400, "field 'path' is required")
+    b64 = body.get("content_b64")
+    if b64 is None:
+        raise ApiError(400, "field 'content_b64' is required (base64-encoded bytes)")
+    try:
+        data = base64.b64decode(b64, validate=True)
+    except (binascii.Error, ValueError):
+        raise ApiError(400, "content_b64 is not valid base64") from None
+    try:
+        app.store.artifacts(p["slug"]).put(path, data)
+    except ValueError as e:  # path-traversal guard (filesystem store)
+        raise ApiError(400, str(e)) from None
+    return Response(201, {"path": path, "size": len(data)})
+
+
+def _h_list_assets(app: Application, req: Request, p: dict[str, str]) -> Response:
+    app._require_project(p["slug"])
+    prefix = req.query.get("prefix", "")
+    return Response(200, {"assets": list(app.store.artifacts(p["slug"]).list(prefix))})
+
+
+def _h_get_asset(app: Application, req: Request, p: dict[str, str]) -> Response:
+    app._require_project(p["slug"])
+    key = req.query.get("key")
+    if not key:
+        raise ApiError(400, "query param 'key' is required")
+    art = app.store.artifacts(p["slug"])
+    try:
+        data = art.get(key)
+    except KeyError:
+        raise ApiError(404, f"no asset: {key}") from None
+    except ValueError as e:
+        raise ApiError(400, str(e)) from None
+    ctype = mimetypes.guess_type(key)[0] or "application/octet-stream"
+    return Response(200, raw=data, content_type=ctype)
 
 
 def _outcome_json(outcome: Any) -> dict[str, Any]:

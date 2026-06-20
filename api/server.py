@@ -13,7 +13,7 @@ import json
 import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from .core import Application, Request
+from .core import Application, Request, Response
 from .deps import build_default_app
 
 
@@ -35,7 +35,7 @@ def _make_handler(app: Application) -> type[BaseHTTPRequestHandler]:
                 try:
                     body = json.loads(raw or b"{}")
                 except json.JSONDecodeError:
-                    self._write(400, {"error": "invalid JSON body"})
+                    self._send(Response(400, {"error": "invalid JSON body"}))
                     return
             req = Request(
                 method=method,
@@ -44,13 +44,15 @@ def _make_handler(app: Application) -> type[BaseHTTPRequestHandler]:
                 headers={k: v for k, v in self.headers.items()},
                 query=query,
             )
-            resp = app.dispatch(req)
-            self._write(resp.status, resp.body)
+            self._send(app.dispatch(req))
 
-        def _write(self, status: int, body: dict) -> None:
-            payload = json.dumps(body).encode()
-            self.send_response(status)
-            self.send_header("content-type", "application/json")
+        def _send(self, resp: Response) -> None:
+            if resp.raw is not None:
+                payload, ctype = resp.raw, resp.content_type
+            else:
+                payload, ctype = json.dumps(resp.body).encode(), "application/json"
+            self.send_response(resp.status)
+            self.send_header("content-type", ctype)
             self.send_header("content-length", str(len(payload)))
             self.end_headers()
             self.wfile.write(payload)

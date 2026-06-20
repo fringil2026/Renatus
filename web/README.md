@@ -84,8 +84,8 @@ Prove you own yoursite.com:  ( ) DNS TXT  ( ) meta tag  ( ) /.well-known file
 ```
 Questionnaire (22 Qs) · upload logo / product photos / hours → [ Finish my site ]
 ```
-- ⛏ endpoints to submit owner answers + manage the deliverables list + upload assets — **not built**
-  (the studio reads `owner-answers.txt` / `assets/` from disk; the SaaS needs upload/intake endpoints).
+- `POST /v1/projects/{slug}/assets {path, content_b64}` ✓ — upload owner answers
+  (`02-intake/owner-answers.txt`), photos, logo, deliverables; list via `GET …/assets`.
 - `POST /v1/projects/{slug}/actions/finish` ✓ (stage `answers-received` → `final`).
 
 ### Step 8 — Request launch → reviewed → go live (decision #2)
@@ -146,10 +146,10 @@ Consolidated, actionable — control-plane additions. ✅ = built; ⛏ = remaini
 2. ✅ `POST …/actions/baseline` — run the scrape ladder (`queued` → `baseline-ready`) (Step 4).
 3. ✅ `POST …/actions/intake-pack` — generate concept boards + open the concept decision (Step 4).
 4. ✅ `POST …/decisions/{n}/resolve {choice}` — record the concept pick (Step 4).
-5. ⛏ Asset/intake endpoints — upload owner answers, deliverables, logo/photos (Step 7).
-6. ⛏ Static asset route — serve concept-board screenshots + preview thumbnails (Step 4/5).
+5. ✅ Asset endpoints — `POST …/assets` (base64 upload: owner answers, deliverables, photos) (Step 7).
+6. ✅ Asset serving — `GET …/assets` (list) + `GET …/asset?key=` (raw bytes, mimetype-guessed) (Step 4/5).
 7. ✅ `GET /v1/admin/launches` — cross-tenant reviewer queue (Step 2 / §2).
 8. ⛏ Stripe integration — real `billing/checkout` + webhook (Step 2).
 
-Remaining: 5 + 6 (asset upload/serving — still pure engine/API over the ArtifactStore) and 8 (Stripe,
-the one true vendor dependency).
+Remaining: just **8 (Stripe)** — the one true external-vendor dependency. Everything else the funnel
+needs from the control plane is built and tested.

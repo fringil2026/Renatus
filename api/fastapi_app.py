@@ -51,6 +51,10 @@ def create_fastapi_app(application: Application) -> Any:
                 query=dict(request.query_params),
             )
         )
+        if resp.raw is not None:  # binary/static asset
+            from fastapi import Response as FastAPIResponse
+
+            return FastAPIResponse(content=resp.raw, media_type=resp.content_type, status_code=resp.status)
         return JSONResponse(resp.body, status_code=resp.status)
 
     return app
