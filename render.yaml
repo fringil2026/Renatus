@@ -1,0 +1,18 @@
+# Render.com blueprint for the control-plane API (the funnel's backend).
+# Render dashboard → New → Blueprint → pick this repo. Gives a public https URL to put in the
+# web app's API_BASE_URL. NOTE: real diagnostics/builds need Playwright + Claude auth on the host
+# (not on free tier) — the funnel UI + project lifecycle work without them; full diagnostic is Tier 2.
+services:
+  - type: web
+    name: web-studio-api
+    runtime: python
+    plan: free
+    buildCommand: "pip install -e '.[api]'"
+    startCommand: "uvicorn api.asgi:app --host 0.0.0.0 --port $PORT"
+    envVars:
+      - key: WS_ENFORCE_OWNERSHIP
+        value: "1"
+      - key: WS_ENFORCE_BILLING
+        value: "0"
+      # Set these in the Render dashboard when you wire the features:
+      # WS_API_TOKEN, WS_ADMIN_TOKEN, WS_REVIEWER_TOKEN, STRIPE_*, a Postgres DSN, etc.
