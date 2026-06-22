@@ -20,3 +20,6 @@ __pycache__/
 MASTERFILE*.md
 .claude/incidents/
 .claude/reports/
+# outreach pipeline — prospect scrapes, masterfile, drafted emails (real-business data, never committed)
+outreach/
+.data/

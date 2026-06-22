@@ -61,6 +61,7 @@ Status flow: **NEEDED → REQUESTED → RECEIVED → VERIFIED**.
 | D-2.4.6 | Font licenses | Ship type legally | PHASE-1 | NEEDED | We can substitute license-safe (Google Fonts) if none provided. |
 | D-2.4.7 | Stock-image licenses | Legal right to ship each image | BLOCKING-at-launch | NEEDED | At Finish, unlicensed images are FOR REVIEW + replaced. |
 | D-2.4.8 | Copy / asset provenance (who wrote/shot it) | Scraped copy/imagery is DRAFT until ownership confirmed | BLOCKING-at-launch | NEEDED | You confirm authorship; otherwise we draft/replace. |
+| D-2.4.9 | Marketplace product-photo rights / source confirmation *(marketplace-export migrations — CLIENT shops)* | The imported listing photos must be the seller's OWN material — confirms the client owns or is authorized to use every photo supplied with their Etsy/eBay export (their own shots, not third-party/stock) | BLOCKING-at-launch | NEEDED | You confirm you shot/own the listing photos; any not owned are flagged FOR REVIEW + replaced before launch. (For your OWN-shop imports this is self-attested.) |
 
 ## 2.5 Historical & SEO
 | ID | What we need | Why | Priority | Status | Fallback |
@@ -84,6 +85,10 @@ Status flow: **NEEDED → REQUESTED → RECEIVED → VERIFIED**.
 | ID | What we need | Why | Priority | Status | Fallback |
 |---|---|---|---|---|---|
 | D-2.7.1 | <spec fact 1> | <why, from spec> | <BLOCKING/PHASE-n> | NEEDED | <who would know> |
+
+> **Marketplace-export migrations only** *(include these two rows when the catalog source is an Etsy/eBay export instead of a scrape — see SYSTEM.md "Marketplace-export intake")*:
+> | D-2.7.E1 | Etsy/eBay listings export (CSV) + the listing photos — **client-provided** | The authorized catalog source for this migration: the CLIENT runs the export from their OWN Shop Manager / Seller Hub (or grants access) and supplies their own photos; we never scrape their marketplace account | BLOCKING-for-commerce | NEEDED | Etsy: Shop Manager → Settings → Options → Download Data → "Currently for sale listings". eBay: Seller Hub → Listings → download active listings. Drop the CSV + a photos folder into `02-intake/assets/`. |
+> | D-2.7.E2 | Authorization that the client owns this shop + supplied the export | Records that the migration ran on the client's OWN shop with the client's authorization — pairs with D-2.4.9 photo rights | BLOCKING | NEEDED | The seller confirms the shop is theirs and they ran/authorized the export. (For your OWN-shop imports, owner=`self`, self-attested.) |
 
 ---
 

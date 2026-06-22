@@ -85,6 +85,8 @@ binding spec explicitly waives it (and the waiver is recorded).
    (`render_capture.py`, catches JS-driven features), wget mirror (`mirror.sh`, capped —
    raise the cap deliberately via env var for full-catalog modes, never unbounded), plus
    robots/sitemap parsing and JS-file harvesting for feature signals.
+   *(Marketplace shop? The catalog source is the owner's authorized Etsy/eBay export instead of a
+   scrape — same DRAFT records, same downstream flow. SYSTEM.md §1a; boundary in §3 above.)*
 2. **Feature census** (`feature_census.py`) — every macro-feature classified:
    - `CARRY-OVER` — static-feasible; MUST appear in the prototype (the parity floor).
    - `STUB+FLAG` — needs backend or client input; ships as a visible honest stub with its
@@ -123,6 +125,14 @@ binding spec explicitly waives it (and the waiver is recorded).
   `MIRROR_MAX_FILES` / `MIRROR_MAX_SECONDS` — bounded, logged, and announced in the run log.
 - **Polite crawling:** identified user-agent, ~0.5s wait, bounded retries/timeouts. The studio
   scrapes a client's own site for the client's own rebuild — never third-party sites for assets.
+- **Marketplace-export intake [HARD BOUNDARY].** When the shop lives on a marketplace (Etsy/eBay),
+  the catalog source is the **owner's own authorized export** (CSV listings + the owner's photos),
+  NOT a scrape — applies to a seller's OWN shop with that seller's authorization, **mine OR a
+  client's**. It is **never** a scraper for other sellers' listings and we **never bot-scrape
+  eBay/Etsy** (against their terms): owner-authorized export only, the client running it from their
+  own Shop Manager / Seller Hub or granting access. Imports as DRAFT records under the same catalog
+  integrity + correspondence rules (§4 — photos matched by SKU/listing-id, never order/index). Full
+  mechanism + CSV→record mapping + provenance fields: SYSTEM.md §1a.
 - **Image resolution:** every scraped image resolves to its LARGEST available variant; pixel
   dimensions are recorded; thumbnail-pattern URLs are traced to originals.
 - **Stray-process hygiene:** every scrape entrypoint kills leftover wget on start, signal, and
@@ -708,6 +718,10 @@ feature) · D-2.7.4 photography — large originals ≥2000px, product + habitat
 (full photographic design expression) · D-2.7.5 shipping policy facts (checkout shipping,
 policy page) · D-2.7.6/D-2.6.5 legal name (receipts) · D-2.3.1 per-form inbox destinations ·
 D-2.4.4 + D-2.6.1 pixel + consent decision. Every prototype stub names its unblock D-number.
+**Marketplace-export migrations (client shops)** add: D-2.7.E1 client-provided Etsy/eBay listings
+export + photos (the catalog source, BLOCKING) · D-2.7.E2 ownership/authorization of the shop +
+export (BLOCKING) · D-2.4.9 product-photo rights / source confirmation (BLOCKING-at-launch). See
+SYSTEM.md §1a.
 
 ## 21. CHANGE-CONTROL CONVENTIONS (recap)
 

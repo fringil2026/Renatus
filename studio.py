@@ -15,7 +15,7 @@ Lifecycle: new client -> scrape (concurrent, queued past the limit) -> Claude Co
 assembles/finishes -> ARCHIVE button moves clients/<slug>/ to
 archive/<slug>-<timestamp>/ (a fresh folder per finished project) and clears the row.
 """
-import hashlib, json, os, re, secrets, shutil, socket, subprocess, sys, threading, time
+import base64, hashlib, json, os, re, secrets, shutil, socket, subprocess, sys, threading, time, zipfile
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -25,6 +25,7 @@ ROOT = Path(__file__).resolve().parent
 CLIENTS = ROOT / "clients"
 ARCHIVE = ROOT / "archive"
 BASELINE = ROOT / ".claude" / "skills" / "site-baseline" / "scripts" / "run_baseline.py"
+MARKETPLACE_IMPORT = ROOT / ".claude" / "skills" / "site-baseline" / "scripts" / "marketplace_import.py"
 
 HOST = os.environ.get("STUDIO_HOST", "127.0.0.1")
 PORT = int(os.environ.get("STUDIO_PORT", "8788"))
@@ -79,6 +80,7 @@ def is_transient_failure(text):
 NEXT = {
     "queued":           "Queued — waiting for a free scrape slot…",
     "created":          "Queued…",
+    "import-pending":    "Marketplace import — upload the listings CSV + photos on the Marketplace Import page, then start the build pipeline.",
     "scraping":         "Scraping in progress (3 methods)…",
     "error":            "Scrape error — see the log, then use Rerun.",
     "baseline-ready":   "Baseline ready — pick a concept board, then Assemble (or run a Full build).",
@@ -178,6 +180,187 @@ def scaffold(name, domain):
     write_status(cdir, {"name": name or slug, "domain": domain, "stage": "created",
                         "created": now(), "log": [f"{now()} scaffolded"]})
     return slug, cdir, True
+
+# ---------------- marketplace-export intake (SYSTEM.md §1a) ----------------
+# Build a site from a seller's OWN Etsy/eBay export instead of a scrape — mine OR a client's, with
+# that seller's authorization. NEVER a scraper for other sellers; we never bot-scrape eBay/Etsy.
+IMPORT_PLATFORMS = {"etsy": "Etsy", "ebay": "eBay"}
+IMPORT_OWNERS = {"self": "My own shop", "client": "A client's shop"}
+IMPORT_BOUNDARY = ("Owner-authorized own-shop export only — mine OR a client's. The seller runs the "
+                   "export from their own Shop Manager / Seller Hub (or grants access). This is NEVER "
+                   "a scraper for other sellers' listings, and we never bot-scrape eBay/Etsy.")
+# Provenance deliverables surfaced for owner=client (mirror templates/deliverables-template.md + §1a).
+IMPORT_PROVENANCE = [
+    {"id": "D-2.7.E1", "what": "Etsy/eBay listings export (CSV) + the listing photos — client-provided",
+     "priority": "BLOCKING-for-commerce"},
+    {"id": "D-2.7.E2", "what": "Authorization that the client owns this shop + ran/supplied the export",
+     "priority": "BLOCKING"},
+    {"id": "D-2.4.9", "what": "Marketplace product-photo rights / source confirmation (the client's own photos)",
+     "priority": "BLOCKING-at-launch"},
+]
+
+def new_import_client(name, platform, owner):
+    """Create the standard client scaffold for a marketplace migration, recording provenance
+    (catalog.source/owner) and parking it at stage=import-pending until the export is uploaded."""
+    if platform not in IMPORT_PLATFORMS or owner not in IMPORT_OWNERS:
+        return None, "platform must be etsy/ebay and owner must be self/client"
+    slug, cdir, fresh = scaffold(name, "")
+    st = read_status(cdir)
+    st["catalog"] = {"source": f"{platform}-export", "owner": owner}
+    st["stage"] = "import-pending"
+    st.setdefault("log", []).append(
+        f"{now()} marketplace-import client created — source={platform}-export, owner={owner}")
+    write_status(cdir, st)
+    # auto-author the BINDING design spec (creative + no-blocky-outlines + ecommerce backend)
+    (cdir / "02-intake" / "specs").mkdir(parents=True, exist_ok=True)
+    (cdir / "02-intake" / "specs" / "marketplace-creative-build.md").write_text(
+        marketplace_design_spec(slug, platform, owner))
+    return slug, None
+
+def marketplace_summary(cdir):
+    """Run the importer over the uploaded CSV + assets and return the parse/match summary. Reads
+    entirely from files (re-runs each call), so the preview is correct after refresh/restart and
+    picks up photos uploaded after the CSV. Also (re)writes 01-baseline/catalog-draft.json."""
+    if not (cdir / "02-intake" / "marketplace-export.csv").exists():
+        return {"ok": False, "error": "no CSV uploaded yet"}
+    try:
+        r = subprocess.run([sys.executable, str(MARKETPLACE_IMPORT), str(cdir)],
+                           cwd=str(ROOT), capture_output=True, text=True, timeout=180)
+        line = (r.stdout or "").strip().splitlines()
+        if not line:
+            return {"ok": False, "error": (r.stderr or "importer produced no output")[-300:]}
+        return json.loads(line[-1])
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+def save_import_photos(cdir, filename, raw):
+    """Save uploaded photos into 02-intake/assets/. A .zip is unpacked (image members only, paths
+    stripped); a single image is saved as-is. Returns the list of saved basenames."""
+    assets = cdir / "02-intake" / "assets"
+    assets.mkdir(parents=True, exist_ok=True)
+    saved = []
+    if filename.lower().endswith(".zip"):
+        import io
+        try:
+            zf = zipfile.ZipFile(io.BytesIO(raw))
+        except Exception as e:
+            return [], f"bad zip: {e}"
+        for member in zf.namelist():
+            base = Path(member).name
+            if not base or member.endswith("/"):
+                continue
+            if Path(base).suffix.lower() not in (".jpg", ".jpeg", ".png", ".webp", ".gif",
+                                                 ".avif", ".tif", ".tiff", ".bmp"):
+                continue
+            (assets / base).write_bytes(zf.read(member))
+            saved.append(base)
+        return saved, None
+    base = Path(filename).name
+    (assets / base).write_bytes(raw)
+    return [base], None
+
+def marketplace_design_spec(slug, platform, owner):
+    """The BINDING build order auto-authored for a marketplace-import client: creative design mode,
+    the 'against blocky outlines' guardrail, a category-true (not botanical-by-default) visual world,
+    and the full ecommerce backend at the final build. Carries spec-id + status:BINDING so it unlocks
+    the backend configurator (has_binding_spec)."""
+    pname = IMPORT_PLATFORMS.get(platform, platform)
+    return f"""---
+spec-id: WS-SPEC-{slug.upper().replace('-', '_')}-MKT-001
+version: 1
+status: BINDING
+client: {slug}
+archetype: ecommerce-catalog
+generated: {now()[:10]}
+---
+
+# Build spec — {pname} shop migration ({slug})
+
+BINDING build order (CLAUDE.md "Build specs"): overrides archetype/playbook defaults where they
+conflict; never overrides the studio Hard rules.
+
+## Catalog source
+The catalog is the **owner-authorized {platform} export** (SYSTEM.md §1a), already imported to
+`01-baseline/catalog-draft.json` (DRAFT). Build the FULL catalog from it: one product per record,
+each product's photo paired by SKU/listing-id/filename (NEVER order/index). Exported prices,
+descriptions, and quantities are DRAFT until the owner confirms. Photo-less products get a clean
+type-led card — never a borrowed or invented image. Owner: {owner}.
+
+## Design — CREATIVE, against blocky outlines [BINDING]
+Build in **creative design mode** (the maximal swing, ECOMMERCE-GUIDELINES §5.9: disciplined graphic
+richness + smooth modern interactivity + an original generated graphic system + ONE signature motion
+moment).
+
+**Hard design guardrail — NO blocky outlines.** This storefront must NOT look like boxed template
+commerce:
+- No hard-bordered boxy cards; no outlined rectangular section blocks; no grid of bordered boxes; no
+  1px-outline "containers" as the organising idea of the layout.
+- Instead: full-bleed imagery, borderless cards separated by SPACE / soft shadow / typographic
+  rhythm, editorial asymmetry, flowing/organic section transitions, generous negative space.
+- A blocky bordered-box layout is a BUILD FAILURE to fix before reporting, not a style note.
+
+**Category-true, NOT botanical-by-default.** Derive the visual world (palette, motif family, type
+pairing, signature element) from THIS shop's OWN products — its materials, craft, and subject as
+seen in the imported catalog. Do NOT impose the studio's botanical/greenhouse default unless the
+shop genuinely sells plants. Name the concept and where its brand moment lives.
+
+## Prototype → edits → final build
+1. **Prototype** (Command 1): a complete, honest creative storefront from the imported catalog,
+   published as a preview. Parity floor = the imported catalog + standard storefront features
+   (browse, product pages, search/filter, cart entry).
+2. **Edits** via the edit ledger (Command 5) on the published prototype.
+3. **Final build** — the full commerce backend per BACKEND.md + the BINDING backend-config:
+   Phases 2–4 — Supabase (catalog/admin/accounts), Stripe checkout (server-verified prices), Resend
+   transactional email — plus storefront integrations (search, forms→inbox, GA4, consent). Reached
+   via Configure backend → Full build (from this prototype); rehearsal TEST creds first, cutover
+   refused while any # REHEARSAL credential is in use.
+"""
+
+def import_creative_clause():
+    """Category-NEUTRAL creative directive for marketplace imports (the orchid-specific creative_clause
+    is wrong for an arbitrary Etsy/eBay shop). Same craft, but the visual world is derived from the
+    shop's own products, plus the binding 'no blocky outlines' guardrail."""
+    return ("DESIGN MODE = CREATIVE (the maximal swing, ECOMMERCE-GUIDELINES §5.9): build the storefront "
+            "with full creative craft = (1) disciplined graphic richness (editorial art direction, "
+            "oversized type as artwork, MUTED full-bleed colour interludes, layered composition); "
+            "(2) smooth modern interactivity — section-based scroll narrative, scroll-reveals "
+            "(IntersectionObserver + CSS, no heavy library), hover category tiles as the 'shop by' entry, "
+            "slide-out drawers (cart/filters/mobile-nav, transforms, no reloads), a condensing sticky "
+            "header, and ONE signature motion moment; motion SERVES navigation; prefers-reduced-motion "
+            "honoured absolutely; (3) an ORIGINAL generated graphic system (code-drawn SVG motifs + "
+            "atmospheric textures + a connective family of dividers/ornaments) — muted, aria-hidden, "
+            "never blocking first paint. HONESTY BOUNDARY (HARD): generated art is DECORATION ONLY — "
+            "never a stand-in for a real product image; show the real photo or an honest type-led "
+            "fallback, never an invented product; all art ORIGINAL (drawn as code), never traced/copied. "
+            "DERIVE THE VISUAL WORLD FROM THIS SHOP'S OWN PRODUCTS (materials / craft / subject in the "
+            "imported catalog) — do NOT default to botanical/greenhouse motifs unless the shop sells "
+            "plants. HARD GUARDRAIL — NO BLOCKY OUTLINES: no hard-bordered boxy cards, no outlined "
+            "rectangular section blocks, no grid-of-bordered-boxes; use full-bleed imagery, borderless "
+            "cards separated by space/shadow/typographic rhythm, editorial asymmetry, organic section "
+            "transitions, generous negative space — a blocky bordered-box layout is a build failure. "
+            "INVARIANTS: the parity floor stays (every imported product + standard storefront feature); "
+            "carry EVERY imported photo (re-import the records) — expression changes HOW a photo is "
+            "shown, never WHETHER; photography stays resolution-limited (NEVER upscaled; type-led "
+            "fallback where a product has no usable photo); every studio + archetype Hard rule stays; "
+            "the swing is EXPRESSION-ONLY. Pass the full Design QA Gate and name the brand moment.")
+
+def import_build_runbook(slug):
+    return (f"CREATIVE PROTOTYPE for {slug} — a marketplace-import client (its shop lives on Etsy/eBay; "
+            f"there is NO scrape). Read EVERY binding spec in clients/{slug}/02-intake/specs/ FIRST — the "
+            f"marketplace build spec is authoritative. Assemble the prototype per CLAUDE.md Command 1: copy "
+            f"the ecommerce-catalog archetype into clients/{slug}/03-site (cp -R; never build in templates/), "
+            f"then build the FULL catalog from the owner-authorized import at "
+            f"clients/{slug}/01-baseline/catalog-draft.json (SYSTEM.md §1a) — one product per record, "
+            f"DRAFT-labelled, each photo paired by SKU/listing-id/filename (NEVER order/index), photo-less "
+            f"products as clean type-led cards. {import_creative_clause()} "
+            f"Author clients/{slug}/01-baseline/parity-checklist.md from the imported catalog + standard "
+            f"storefront features (each row a concrete dist/ verification method), then RUN THE VERIFICATION "
+            f"LOOP against clients/{slug}/03-site/dist — INCLUDING an 'every imported photo present' row AND "
+            f"a 'no blocky bordered-box layout' row — FAIL and iterate, never ship incomplete. Verify with "
+            f"npm install && npm run build --prefix clients/{slug}/03-site. Set stage=prototype (then "
+            f"awaiting-owner) when it passes. On any human-judgment fork, open a decision (resume_job set) "
+            f"and STOP. PUBLISH-ALWAYS after the loop passes; write the build report and report the concept, "
+            f"the brand moment, the no-blocky-outlines verdict, and the parity-checklist results.")
 
 def start_scrape(slug, domain):
     cdir = CLIENTS / slug
@@ -473,7 +656,11 @@ def version_build_runbook(slug, idx, mode):
                       "Restrained muted palette."),
         "creative": creative_clause("claude"),
     }[mode]
-    base = ("Use the existing 03-site as the project base." if idx == 0 else
+    base = (("Use the existing 03-site as the project base; if 03-site does not exist yet (e.g. a "
+             "marketplace-import client), FIRST assemble the prototype per CLAUDE.md Command 1, "
+             "sourcing the catalog from the scrape baseline OR — when status.json catalog.source ends "
+             "with '-export' — from the owner-authorized marketplace import (01-baseline/catalog-draft.json, "
+             "SYSTEM.md §1a; honor the same DRAFT + photo-correspondence rules).") if idx == 0 else
             f"If {sd}/ does not exist, COPY the base project into it first (cp -R 03-site {sd}), then customise the copy.")
     return (f"BUILD VERSION v{idx+1} ({mode}) for {slug} into {sd}/ (do NOT touch any other 03-site-* dir). "
             f"{base} {expr} This version is a COMPLETE, honest site: carry the FULL parity floor and EVERY "
@@ -1240,6 +1427,7 @@ def list_clients():
                     "pending_edits": pending_edits_count(d.name),
                     "reports": list_reports(d.name),
                     "design_mode": read_status(d).get("design_mode", "standard"),
+                    "catalog": st.get("catalog"),
                     "versions": st.get("versions", []),
                     "version_advisories": version_advisories(d.name),
                     "documents": [n for n in ("redesign-plan.md", "deliverables-request.md",
@@ -1394,6 +1582,7 @@ button.adv.fb[disabled]{color:var(--muted);border-color:var(--line);opacity:.6}
 .ovbtn:hover:not([disabled]){background:transparent;color:#9b78ff}
 .ovbtn[disabled]{opacity:.5;cursor:not-allowed}
 .cvbadge{font-family:var(--m);font-size:.56rem;letter-spacing:.12em;background:#7a4dff;color:#fff;padding:.15em .5em;border-radius:2px}
+.mpbadge{font-family:var(--m);font-size:.56rem;letter-spacing:.08em;background:#1f5e4a;color:#bff0d8;border:1px solid #2f8a6a;padding:.15em .5em;border-radius:2px}
 #ov-text{width:100%;box-sizing:border-box;background:#181818;color:#eee;border:1px solid #444;padding:.6em;font-family:var(--b);font-size:.85rem;line-height:1.5;margin-top:.3rem}
 #ov-text:focus{outline:none;border-color:#7a4dff}
 .ovnotice{font-size:.7rem;color:var(--muted);margin:.45rem 0 .2rem;border-left:2px solid #7a4dff;padding-left:.5rem}
@@ -1422,6 +1611,8 @@ button.adv.fb[disabled]{color:var(--muted);border-color:var(--line);opacity:.6}
 .vlink.chosen .pvw{color:#7bd88f;font-weight:700}
 .chosenbadge{color:#7bd88f;font-size:.66rem}
 .vtiny{font-size:.62rem;padding:.05rem .35rem;border:1px solid #555;border-radius:4px;background:transparent;color:#aab;cursor:pointer}
+.mplink{color:#7bd88f;font-weight:600;text-decoration:none;border-bottom:1px solid #2f8a6a}
+.mplink:hover{color:#bff0d8}
 </style></head><body><div class="wrap">
 <div id="stalebanner" class="stalebanner" style="display:none"></div>
 <h1>Web Studio <span id="vstamp" class="vstamp" title="running dashboard code version"></span></h1><p class="sub">Two human steps · everything else automated</p>
@@ -1437,6 +1628,11 @@ button.adv.fb[disabled]{color:var(--muted);border-color:var(--line);opacity:.6}
 <input class="grow" name="domain" placeholder="https://example-client.com" required>
 <input class="grow" name="name" placeholder="Client name (optional)">
 <button>Start pipeline</button></form>
+<div style="margin-top:.7rem;font-family:var(--m);font-size:.72rem;color:var(--muted)">
+  No website to scrape — a shop on Etsy/eBay? <a class="mplink" href="/import">Marketplace Import →</a>
+  &nbsp;·&nbsp; Prospecting: diagnose sites + draft emails — <a class="mplink" href="/outreach">Outreach →</a>
+  <span style="color:var(--muted)">build from the owner's authorized export instead of a scrape.</span>
+</div>
 <div style="margin-top:.9rem">
   <button class="ghost" onclick="openSession('studio')">Claude: Studio (terminal)</button>
   <button class="ghost" onclick="toggleChat('studio')">Studio chat ▾</button>
@@ -1703,6 +1899,7 @@ function liveZone(c){ return `<div class="live">
       ${c.decisions_open?`<span class="needbadge">${c.decisions_open} decision${c.decisions_open>1?'s':''}</span>`:''}
       ${c.incidents_open?`<span class="incbadge">${c.incidents_open} incident${c.incidents_open>1?'s':''}</span>`:''}
       ${c.design_mode==='creative'?'<span class="cvbadge">CREATIVE</span>':''}
+      ${c.catalog&&c.catalog.source?`<span class="mpbadge" title="catalog source: owner-authorized ${esc(c.catalog.source)} (owner: ${esc(c.catalog.owner||'self')}) — never scraped">⤓ ${esc(c.catalog.source)} · ${esc(c.catalog.owner||'self')}</span>`:''}
       ${c.busy?'<span class="run">● running…</span>':''}
       ${c.pending_edits?`<button class="adv pe" ${c.busy?'disabled':''} title="Implement the ${c.pending_edits} PENDING edit${c.pending_edits>1?'s':''} in 02-intake/edits/, then build + deploy (preview URL refreshes)." onclick="processEdits('${c.slug}')">✎ Process ${c.pending_edits} edit${c.pending_edits>1?'s':''}</button>`:''}
       ${c.advance?`<button class="adv" ${c.advance.enabled?'':'disabled'} title="${(c.advance.tooltip||c.advance.desc||'').replace(/"/g,'&quot;')}" onclick="openAdvance('${c.slug}')">${c.advance.label}</button>${c.advance.badge?`<span class="rehbadge">${c.advance.badge}</span>`:''}<span class="copy" title="Copy terminal command" onclick="cpCmd('${c.slug}')">⧉</span>`:''}
@@ -1924,6 +2121,648 @@ function flash(form, msg){
 load(); setInterval(load, 4000);
 </script></body></html>"""
 
+# ---------------- Outreach pipeline (prospecting: spreadsheet -> diagnostics -> DRAFT emails) ----------------
+# Upload a Grata export -> per-row site-diagnostic (the site-diagnostic skill, one claude -p per
+# row, paced + resumable) -> two living output files. STOPS AT DRAFTS: nothing is ever sent from
+# here (sending — with the required unsubscribe + physical-address compliance — is a later layer).
+# The RUNNER owns masterfile.csv + drafted-emails.csv (single writer); each row job only writes
+# outreach/prospects/<domain>/ (result.json + report.md + capture). outreach/ is git-ignored.
+OUTREACH = ROOT / "outreach"
+OUTREACH_RUNS = OUTREACH / "runs"
+OUTREACH_PROSPECTS = OUTREACH / "prospects"
+OUTREACH_MASTER = OUTREACH / "masterfile.csv"
+OUTREACH_DRAFTS = OUTREACH / "drafted-emails.csv"
+OUTREACH_KEY = "__outreach__"
+OUTREACH_PACING_S = int(os.environ.get("OUTREACH_PACING_S", "20"))      # polite gap between rows
+OUTREACH_ROW_TIMEOUT_S = int(os.environ.get("OUTREACH_ROW_TIMEOUT_S", "1500"))
+OUTREACH_STOP = threading.Event()
+OUTREACH_LOCK = threading.Lock()
+
+MASTER_FIELDS = ["domain", "company", "url", "date_processed", "industry", "standard",
+                 "verdict", "score", "top_problems", "contact_status", "run_id"]
+DRAFT_FIELDS = ["company", "url", "domain", "industry", "problem_1", "problem_2", "problem_3",
+                "subject", "body", "run_id", "date"]
+
+def _read_csv_dicts(path):
+    import csv
+    if not path.exists():
+        return []
+    with path.open(newline="") as f:
+        return list(csv.DictReader(f))
+
+def _append_csv_row(path, fields, row):
+    import csv
+    path.parent.mkdir(parents=True, exist_ok=True)
+    new = not path.exists()
+    with path.open("a", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=fields, extrasaction="ignore")
+        if new:
+            w.writeheader()
+        w.writerow(row)
+
+def normalize_prospect_url(raw):
+    """-> (url, domain) or (None, None). Domain is the dedup key (lower, no www)."""
+    u = (raw or "").strip().strip('"').strip()
+    if not u or u.lower() in ("n/a", "none", "-"):
+        return None, None
+    if not re.match(r"^https?://", u, re.I):
+        u = "https://" + u
+    try:
+        host = urlparse(u).netloc.lower().split(":")[0]
+    except Exception:
+        return None, None
+    if "." not in host or " " in host:
+        return None, None
+    return u, host[4:] if host.startswith("www.") else host
+
+def infer_outreach_mapping(headers):
+    """Detect the company-name + website-URL columns of an arbitrary (Grata) export.
+    Social-profile URL columns are explicitly excluded from the website match."""
+    hl = [(h, (h or "").strip().lower()) for h in headers]
+    def pick(prefs, exclude=()):
+        for pref in prefs:
+            for h, low in hl:
+                if pref in low and not any(x in low for x in exclude):
+                    return h
+        return None
+    url_col = pick(["website", "web site", "domain", "homepage", "url"],
+                   exclude=("linkedin", "facebook", "twitter", "instagram", "grata", "crunchbase"))
+    company_col = pick(["company name", "company", "organization", "organisation", "account name",
+                        "business name", "name"], exclude=("contact", "first", "last", "owner", "file"))
+    return {"company_col": company_col, "url_col": url_col, "headers": headers,
+            "ok": bool(url_col), "note": "" if url_col else "no website/url column recognized — fix the sheet or rename the column"}
+
+def parse_outreach_sheet(fname, raw):
+    """CSV or XLSX bytes -> (headers, rows-as-dicts). Raises ValueError with a human reason."""
+    import csv, io
+    if fname.lower().endswith((".xlsx", ".xlsm")):
+        try:
+            import openpyxl
+        except ImportError:
+            raise ValueError("xlsx upload needs openpyxl (pip install openpyxl) — or upload CSV")
+        wb = openpyxl.load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
+        ws = wb.active
+        it = ws.iter_rows(values_only=True)
+        headers = [str(c).strip() if c is not None else "" for c in (next(it, None) or [])]
+        rows = [{headers[i]: ("" if c is None else str(c).strip()) for i, c in enumerate(r) if i < len(headers)}
+                for r in it if any(c not in (None, "") for c in r)]
+    else:
+        text = raw.decode("utf-8-sig", errors="replace")
+        try:
+            dialect = csv.Sniffer().sniff(text[:4000], delimiters=",;\t")
+        except Exception:
+            dialect = csv.excel
+        rd = csv.DictReader(io.StringIO(text), dialect=dialect)
+        headers = rd.fieldnames or []
+        rows = [r for r in rd if any((v or "").strip() for v in r.values())]
+    if not headers or not rows:
+        raise ValueError("no data rows found in the spreadsheet")
+    return headers, rows
+
+def outreach_run_file(run_id):
+    return OUTREACH_RUNS / run_id / "run-state.json"
+
+def read_outreach_run(run_id):
+    f = outreach_run_file(run_id)
+    return json.loads(f.read_text()) if f.exists() else None
+
+def write_outreach_run(state):
+    f = outreach_run_file(state["run_id"])
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text(json.dumps(state, indent=1))
+
+def create_outreach_run(fname, raw):
+    """Parse the upload, infer the column mapping, dedup against the masterfile AND within
+    the sheet, and lay down the resumable run-state artifact. Returns the state dict."""
+    headers, rows = parse_outreach_sheet(fname, raw)
+    mapping = infer_outreach_mapping(headers)
+    if not mapping["ok"]:
+        raise ValueError(mapping["note"])
+    master = {r.get("domain", ""): r for r in _read_csv_dicts(OUTREACH_MASTER)}
+    run_id = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    seen_in_sheet = {}
+    out_rows = []
+    for i, r in enumerate(rows, start=2):   # 2 = first data row of the sheet, for human cross-reference
+        company = (r.get(mapping["company_col"]) or "").strip() if mapping["company_col"] else ""
+        url, domain = normalize_prospect_url(r.get(mapping["url_col"]))
+        row = {"n": i, "company": company or (domain or "?"), "url": url or "", "domain": domain or "",
+               "status": "pending", "note": "", "verdict": ""}
+        if not url:
+            row["status"] = "skipped-no-url"
+            row["note"] = f"unusable URL: {(r.get(mapping['url_col']) or '')[:60]!r}"
+        elif domain in master:
+            m = master[domain]
+            row["status"] = "skipped-duplicate"
+            row["note"] = f"already in masterfile ({m.get('date_processed','?')}, {m.get('verdict','?')}, {m.get('contact_status','?')})"
+        elif domain in seen_in_sheet:
+            row["status"] = "skipped-duplicate"
+            row["note"] = f"duplicate of sheet row {seen_in_sheet[domain]}"
+        else:
+            seen_in_sheet[domain] = i
+        out_rows.append(row)
+    rdir = OUTREACH_RUNS / run_id
+    rdir.mkdir(parents=True, exist_ok=True)
+    (rdir / ("source-" + Path(fname).name)).write_bytes(raw)
+    state = {"run_id": run_id, "created": now(), "source_file": Path(fname).name,
+             "mapping": {k: mapping[k] for k in ("company_col", "url_col")},
+             "headers": headers, "status": "ready", "rows": out_rows}
+    write_outreach_run(state)
+    return state
+
+def outreach_row_command(row, run_id):
+    return (f'Run outreach diagnostic for "{row["company"]}" — {row["url"]} (outreach run {run_id}). '
+            f"Follow the site-diagnostic skill (.claude/skills/site-diagnostic/SKILL.md) in OUTREACH MODE: "
+            f"run diagnose.py into outreach/prospects/{row['domain']}/, classify the industry and resolve "
+            f"the diagnostic standard (generate + report a new playbook if the industry has none), score "
+            f"both axes, and write report.md AND result.json (exact schema in the skill). Draft the email "
+            f"only if the verdict makes it a rebuild candidate. HONESTY RULES ARE BINDING: measurable "
+            f"claims verified-true, judged claims flagged opinion, never fabricate a deficiency. "
+            f"Do NOT write under clients/ and do NOT touch outreach/masterfile.csv or "
+            f"outreach/drafted-emails.csv — the runner owns those.")
+
+def _finish_outreach_row(row, run_id):
+    """Consume the row job's result.json -> masterfile + drafted-emails rows. Returns verdict or None."""
+    rj = OUTREACH_PROSPECTS / row["domain"] / "result.json"
+    if not rj.exists():
+        return None
+    try:
+        res = json.loads(rj.read_text())
+    except Exception:
+        return None
+    drafted = bool(res.get("candidate") and (res.get("email") or {}).get("body"))
+    probs = (res.get("top_problems") or [])[:3]
+    _append_csv_row(OUTREACH_MASTER, MASTER_FIELDS, {
+        "domain": row["domain"], "company": row["company"], "url": row["url"],
+        "date_processed": now(), "industry": res.get("industry", ""),
+        "standard": res.get("standard", ""), "verdict": res.get("verdict", ""),
+        "score": res.get("measurable_score", ""), "top_problems": " | ".join(probs),
+        "contact_status": "drafted" if drafted else "diagnosed", "run_id": run_id})
+    if drafted:
+        em = res["email"]
+        _append_csv_row(OUTREACH_DRAFTS, DRAFT_FIELDS, {
+            "company": row["company"], "url": row["url"], "domain": row["domain"],
+            "industry": res.get("industry", ""),
+            "problem_1": probs[0] if probs else "", "problem_2": probs[1] if len(probs) > 1 else "",
+            "problem_3": probs[2] if len(probs) > 2 else "",
+            "subject": em.get("subject", ""), "body": em.get("body", ""),
+            "run_id": run_id, "date": now()})
+    return res.get("verdict", "done")
+
+def outreach_runner(run_id):
+    """Sequential, paced, resumable row processor. One claude -p per pending row (BG_SEM +
+    CLAUDE_SEM paced like every background build); a row failure logs and moves on; a
+    TRANSIENT failure (budget/rate) pauses the whole run for a later resume."""
+    state = read_outreach_run(run_id)
+    if not state:
+        return
+    state["status"] = "running"
+    write_outreach_run(state)
+    tail = TASKS[OUTREACH_KEY]["tail"]
+    summary_counts = {}
+    try:
+        for row in state["rows"]:
+            if OUTREACH_STOP.is_set():
+                state["status"] = "stopped"
+                break
+            if row["status"] not in ("pending", "active"):
+                continue
+            row["status"] = "active"
+            write_outreach_run(state)
+            tail.append(f"row {row['n']}: {row['company']} ({row['domain']}) …")
+            del tail[:-60]
+            rc = 1
+            with BG_SEM, CLAUDE_SEM:
+                try:
+                    proc = subprocess.Popen([CLAUDE_BIN, "-p", outreach_row_command(row, run_id)],
+                                            cwd=str(ROOT), stdout=subprocess.PIPE,
+                                            stderr=subprocess.STDOUT, text=True)
+                except Exception as e:
+                    row["status"] = "failed"; row["note"] = f"spawn failed: {e}"
+                    write_outreach_run(state)
+                    continue
+                TASKS[OUTREACH_KEY]["proc"] = proc
+                killer = threading.Timer(OUTREACH_ROW_TIMEOUT_S, proc.kill)
+                killer.start()
+                row_tail = []
+                for line in proc.stdout:
+                    line = line.rstrip()
+                    if line:
+                        row_tail.append(line); del row_tail[:-20]
+                        tail.append(line); del tail[:-60]
+                rc = proc.wait()
+                killer.cancel()
+                TASKS[OUTREACH_KEY]["proc"] = None
+            verdict = _finish_outreach_row(row, run_id)
+            if verdict:
+                row["status"] = "done"; row["verdict"] = verdict
+                row["note"] = ""
+            elif is_transient_failure(" ".join(row_tail)):
+                row["status"] = "pending"
+                state["status"] = "paused"
+                state["note"] = f"transient failure on row {row['n']} (budget/rate) — Resume continues here"
+                write_outreach_run(state)
+                tail.append("PAUSED (transient failure — resumable)")
+                break
+            else:
+                row["status"] = "failed" if rc != 0 else "unreachable"
+                row["note"] = ("timeout/" if rc == -9 else "") + (" / ".join(row_tail[-3:]))[:300]
+            write_outreach_run(state)
+            summary_counts[row["status"]] = summary_counts.get(row["status"], 0) + 1
+            if not OUTREACH_STOP.is_set():
+                OUTREACH_STOP.wait(OUTREACH_PACING_S)   # polite pacing, interruptible by Stop
+        else:
+            state["status"] = "done"
+    finally:
+        if state["status"] == "running":
+            state["status"] = "stopped"
+        state["finished"] = now()
+        write_outreach_run(state)
+        try:
+            write_outreach_report(state)
+        except Exception:
+            pass
+        with TASK_LOCK:
+            TASKS.pop(OUTREACH_KEY, None)
+
+def write_outreach_report(state):
+    """Findings convention: every run ends with a studio-level report file."""
+    rep = ROOT / ".claude" / "reports"
+    rep.mkdir(parents=True, exist_ok=True)
+    counts = {}
+    for r in state["rows"]:
+        counts[r["status"]] = counts.get(r["status"], 0) + 1
+    verds = {}
+    for r in state["rows"]:
+        if r.get("verdict"):
+            verds[r["verdict"]] = verds.get(r["verdict"], 0) + 1
+    ts = datetime.now(timezone.utc).strftime("%Y-%m-%d-%H%M")
+    L = [f"# Outreach run {state['run_id']} — {state['status']}",
+         f"Source: {state['source_file']} · mapping: company={state['mapping']['company_col']!r} "
+         f"url={state['mapping']['url_col']!r} · {len(state['rows'])} rows", "",
+         "## Row outcomes", *(f"- {k}: {v}" for k, v in sorted(counts.items())), "",
+         "## Verdicts", *(f"- {k}: {v}" for k, v in sorted(verds.items())), "",
+         "Outputs: outreach/masterfile.csv (dedup source of truth) + outreach/drafted-emails.csv "
+         "(review surface — NOTHING SENT). Per-prospect reports: outreach/prospects/<domain>/report.md"]
+    (rep / f"{ts}-outreach-run-{state['run_id']}.md").write_text("\n".join(L))
+
+def list_outreach_runs():
+    runs = []
+    if OUTREACH_RUNS.exists():
+        for d in sorted(OUTREACH_RUNS.iterdir(), reverse=True)[:6]:
+            st = read_outreach_run(d.name)
+            if not st:
+                continue
+            counts = {}
+            for r in st["rows"]:
+                counts[r["status"]] = counts.get(r["status"], 0) + 1
+            cur = next((r for r in st["rows"] if r["status"] == "active"), None)
+            runs.append({"run_id": st["run_id"], "created": st["created"], "status": st["status"],
+                         "source_file": st["source_file"], "mapping": st["mapping"],
+                         "counts": counts, "total": len(st["rows"]),
+                         "current": (f"{cur['company']} ({cur['domain']})" if cur else ""),
+                         "note": st.get("note", "")})
+    return runs
+
+def outreach_state():
+    master = _read_csv_dicts(OUTREACH_MASTER)
+    files = []
+    for label, p in (("masterfile.csv", OUTREACH_MASTER), ("drafted-emails.csv", OUTREACH_DRAFTS)):
+        if p.exists():
+            mt = datetime.fromtimestamp(p.stat().st_mtime, timezone.utc).strftime("%Y-%m-%d %H:%M:%SZ")
+            files.append({"name": label, "rows": max(0, sum(1 for _ in p.open()) - 1), "updated": mt})
+    recent = [{k: r.get(k, "") for k in ("company", "domain", "verdict", "score", "contact_status", "date_processed")}
+              for r in master[-12:]][::-1]
+    return {"runs": list_outreach_runs(), "files": files, "master_rows": len(master),
+            "recent": recent, "busy": OUTREACH_KEY in TASKS,
+            "tail": TASKS.get(OUTREACH_KEY, {}).get("tail", [])[-8:],
+            "pacing_s": OUTREACH_PACING_S}
+
+OUTREACH_PAGE = """<!doctype html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>Outreach · Web Studio</title>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@400;500&family=Public+Sans:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{--ink:#0c1622;--panel:#122031;--panel2:#182a3f;--line:#2a3c52;--paper:#f4f1ea;
+--amber:#ffb000;--amber2:#d98e00;--muted:#8fa1b5;--grn:#7bd88f;--grn2:#2f8a6a;
+--d:"Barlow Condensed",sans-serif;--b:"Public Sans",sans-serif;--m:"IBM Plex Mono",monospace}
+*{box-sizing:border-box}body{margin:0;background:var(--ink);color:var(--paper);font-family:var(--b);font-size:15px}
+.wrap{max-width:60rem;margin:0 auto;padding:2rem 1.2rem}
+a{color:var(--amber)}
+h1{font-family:var(--d);font-size:2.2rem;text-transform:uppercase;margin:0}
+.sub{font-family:var(--m);font-size:.66rem;letter-spacing:.2em;text-transform:uppercase;color:var(--grn);margin:.2rem 0 .2rem}
+.back{font-family:var(--m);font-size:.72rem;text-decoration:none;color:var(--muted)}
+.back:hover{color:var(--amber)}
+.boundary{border:1px solid var(--grn2);background:#0f2019;color:#bff0d8;font-size:.78rem;
+padding:.7rem .9rem;border-radius:4px;margin:1rem 0 1.4rem;line-height:1.45}
+.card{background:var(--panel);border:1px solid var(--line);padding:1.1rem 1.3rem;margin:0 0 1rem}
+.card h2{font-family:var(--d);font-size:1.2rem;text-transform:uppercase;margin:0 0 .7rem;color:var(--amber)}
+button{background:var(--amber);border:1px solid var(--amber);color:var(--ink);
+font-family:var(--d);font-weight:700;font-size:.9rem;text-transform:uppercase;letter-spacing:.04em;
+padding:.5rem 1.1rem;cursor:pointer;border-radius:2px;margin-top:.9rem}
+button:hover{background:transparent;color:var(--amber)}
+button.ghost{background:transparent;color:var(--muted);border-color:var(--line);font-size:.78rem}
+button.ghost:hover{color:var(--amber);border-color:var(--amber)}
+button.go{background:var(--grn);border-color:var(--grn);color:#06140c}
+button.go:hover{background:transparent;color:var(--grn)}
+button[disabled]{opacity:.5;cursor:not-allowed}
+.drop{display:flex;gap:.7rem;align-items:center;flex-wrap:wrap;font-family:var(--m);font-size:.74rem;color:var(--muted)}
+.drop input[type=file]{max-width:22rem;font-size:.72rem;background:var(--ink);border:1px solid var(--line);color:var(--paper);padding:.45rem}
+.drop button{margin-top:0}
+.okmsg{color:var(--grn);font-size:.74rem;font-family:var(--m)}
+.mono{font-family:var(--m);font-size:.72rem;color:var(--muted)}
+.stat{display:flex;gap:1.4rem;flex-wrap:wrap;font-family:var(--m);font-size:.8rem;margin:.4rem 0}
+.stat b{color:var(--paper);font-size:1.3rem;font-family:var(--d)}
+.flag{border-left:3px solid var(--amber2);background:var(--panel2);padding:.5rem .7rem;margin:.5rem 0;font-size:.76rem}
+.flag.bad{border-color:#ff8a5d}
+table{border-collapse:collapse;width:100%;font-family:var(--m);font-size:.72rem;margin-top:.5rem}
+th,td{border-bottom:1px solid var(--line);padding:.35rem .5rem;text-align:left;color:var(--muted)}
+th{color:var(--amber);font-weight:500;text-transform:uppercase;font-size:.62rem;letter-spacing:.08em}
+td b{color:var(--paper)}
+.pill{font-family:var(--m);font-size:.6rem;letter-spacing:.06em;text-transform:uppercase;border:1px solid var(--line);color:var(--muted);padding:.12em .5em;border-radius:2px;margin-left:.4rem}
+.pill.v-strong-candidate,.pill.v-candidate{border-color:var(--grn2);color:var(--grn)}
+.pill.v-skip{border-color:var(--line)}
+.pill.v-unreachable,.pill.v-failed{border-color:#ff8a5d;color:#ff8a5d}
+.tail{font-family:var(--m);font-size:.66rem;color:var(--grn);background:#0a1410;border:1px solid var(--grn2);
+padding:.5rem .7rem;margin-top:.5rem;white-space:pre-wrap;max-height:9rem;overflow-y:auto}
+.empty{color:var(--muted);font-family:var(--m);font-size:.8rem}
+#reportview{white-space:pre-wrap;font-family:var(--m);font-size:.74rem;color:var(--paper);
+background:var(--ink);border:1px solid var(--line);padding:1rem;max-height:34rem;overflow-y:auto;margin-top:.6rem}
+.runrow{border:1px solid var(--line);background:var(--panel2);padding:.6rem .8rem;margin:.5rem 0}
+.dl{font-family:var(--m);font-size:.74rem}
+</style></head><body><div class="wrap">
+<a class="back" href="/">← Web Studio dashboard</a>
+<h1>Outreach</h1><p class="sub">Prospect diagnostics → drafted emails · nothing is sent from here</p>
+<div class="boundary"><b>Boundary.</b> This pipeline DIAGNOSES prospect sites and DRAFTS personalized emails for your review — it never sends. Measurable claims are verified-true by the diagnostic engine; aesthetic judgments are flagged opinion and phrased softly; a deficiency is never fabricated. Sending (with unsubscribe + physical-address compliance) is a separate, later layer.</div>
+
+<div class="card"><h2>1 · Upload prospect spreadsheet (Grata CSV/XLSX)</h2>
+  <p class="mono">Company-name + website columns are auto-detected from the headers (the inferred mapping is shown before anything runs). Rows already in the masterfile are skipped as duplicates.</p>
+  <form class="drop" onsubmit="return uploadSheet(event)">
+    <input type="file" accept=".csv,.xlsx,text/csv" required>
+    <button class="ghost">Upload</button>
+    <span class="okmsg" id="upmsg"></span>
+  </form>
+  <div id="upresult"></div>
+</div>
+
+<div class="card"><h2>2 · Runs</h2><div id="runs"><p class="empty">No runs yet.</p></div></div>
+
+<div class="card"><h2>3 · Output files &amp; recent verdicts</h2>
+  <div id="files" class="dl"></div>
+  <div id="recent"></div>
+  <div id="reportwrap" style="display:none"><div class="mono" id="reporttitle"></div><div id="reportview"></div></div>
+</div>
+</div>
+<script>
+async function api(path, body){
+  const r = await fetch(path, body ? {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)} : undefined);
+  if(r.status===401){ document.body.innerHTML='<p style="font-family:monospace;color:#ffb000;padding:2rem">401 — reopen with ?key=&lt;token&gt;</p>'; throw 0; }
+  return r.json();
+}
+function esc(s){ return (''+(s||'')).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+function readDataURL(file){ return new Promise(res=>{ const fr=new FileReader(); fr.onload=()=>res(fr.result); fr.readAsDataURL(file); }); }
+let UPLOADED=null;
+async function uploadSheet(e){ e.preventDefault();
+  const f=e.target, file=f.querySelector('input[type=file]').files[0]; if(!file) return false;
+  const m=document.getElementById('upmsg'); m.style.color=''; m.textContent='parsing…';
+  const b64=await readDataURL(file);
+  const r=await api('/api/outreach/upload',{filename:file.name,b64});
+  if(r.error){ m.style.color='#ff8a5d'; m.textContent='✗ '+r.error; return false; }
+  UPLOADED=r.run_id; m.textContent='parsed ✓ '+file.name; f.reset();
+  const c=r.counts||{};
+  document.getElementById('upresult').innerHTML=
+    `<div class="flag">Column mapping inferred — <b>company:</b> ${esc(r.mapping.company_col||'(none — domain used)')} · <b>website:</b> ${esc(r.mapping.url_col)}<br>
+     rows: ${r.total} · to process: ${c.pending||0} · duplicate (masterfile/sheet): ${c['skipped-duplicate']||0} · no usable URL: ${c['skipped-no-url']||0}</div>
+     <button class="go" onclick="startRun('${r.run_id}')">Start diagnostics ▶</button>
+     <div class="mono" style="margin-top:.4rem">Paced (one site at a time, ${r.pacing_s}s between rows), resumable — Stop anytime; Start again continues where it left off.</div>`;
+  return false; }
+async function startRun(id){ const r=await api('/api/outreach/start',{run_id:id});
+  if(r.error){ alert(r.error); return; } document.getElementById('upresult').innerHTML=''; refresh(); }
+async function stopRun(){ await api('/api/outreach/stop',{}); refresh(); }
+async function openReport(domain){
+  const r=await fetch('/api/outreach/report?domain='+encodeURIComponent(domain));
+  const t=await r.text();
+  document.getElementById('reportwrap').style.display='block';
+  document.getElementById('reporttitle').textContent='report — '+domain;
+  document.getElementById('reportview').textContent=t;
+}
+function runRow(r){
+  const c=r.counts||{}, done=(c.done||0), todo=(c.pending||0)+(c.active||0);
+  const can=['stopped','paused','ready'].includes(r.status)&&todo>0;
+  return `<div class="runrow"><div class="mono"><b style="color:var(--paper)">${r.run_id}</b> · ${esc(r.source_file)} · <span class="pill">${r.status}</span>
+    ${r.note?`<span style="color:#ff8a5d"> ${esc(r.note)}</span>`:''}</div>
+    <div class="stat"><div><b>${done}</b><br><span class="mono">done</span></div>
+      <div><b>${todo}</b><br><span class="mono">to go</span></div>
+      <div><b>${(c['skipped-duplicate']||0)+(c['skipped-no-url']||0)}</b><br><span class="mono">skipped</span></div>
+      <div><b>${(c.failed||0)+(c.unreachable||0)}</b><br><span class="mono">failed/dead</span></div>
+      <div><b>${r.total}</b><br><span class="mono">total</span></div></div>
+    ${r.status==='running'?`<div class="mono">now: ${esc(r.current)||'…'}</div><button class="ghost" onclick="stopRun()">■ Stop after this row</button>`:''}
+    ${can?`<button class="go" onclick="startRun('${r.run_id}')">${r.status==='ready'?'Start':'Resume'} ▶</button>`:''}
+  </div>`;
+}
+async function refresh(){
+  const s=await api('/api/outreach/state');
+  const runs=document.getElementById('runs');
+  runs.innerHTML=(s.runs&&s.runs.length)?s.runs.map(runRow).join('')+(s.busy&&s.tail.length?`<div class="tail">${s.tail.map(esc).join('\\n')}</div>`:''):'<p class="empty">No runs yet — upload a spreadsheet above.</p>';
+  document.getElementById('files').innerHTML=(s.files&&s.files.length)?
+    s.files.map(f=>`<div>⤓ <a href="/api/outreach/file?name=${f.name}">${f.name}</a> — ${f.rows} rows · updated ${f.updated}</div>`).join('')
+    :'<p class="empty">No output files yet (masterfile + drafted-emails appear after the first processed row).</p>';
+  document.getElementById('recent').innerHTML=(s.recent&&s.recent.length)?
+    `<table><tr><th>company</th><th>domain</th><th>verdict</th><th>score</th><th>status</th><th>report</th></tr>`+
+    s.recent.map(r=>`<tr><td><b>${esc(r.company)}</b></td><td>${esc(r.domain)}</td>
+      <td><span class="pill v-${esc(r.verdict)}">${esc(r.verdict)}</span></td><td>${esc(r.score)}</td>
+      <td>${esc(r.contact_status)}</td><td><a href="#" onclick="openReport('${esc(r.domain)}');return false">view</a></td></tr>`).join('')+'</table>':'';
+}
+refresh();
+setInterval(refresh, 4000);
+</script></body></html>"""
+
+IMPORT_PAGE = """<!doctype html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>Marketplace Import · Web Studio</title>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@400;500&family=Public+Sans:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{--ink:#0c1622;--panel:#122031;--panel2:#182a3f;--line:#2a3c52;--paper:#f4f1ea;
+--amber:#ffb000;--amber2:#d98e00;--muted:#8fa1b5;--grn:#7bd88f;--grn2:#2f8a6a;
+--d:"Barlow Condensed",sans-serif;--b:"Public Sans",sans-serif;--m:"IBM Plex Mono",monospace}
+*{box-sizing:border-box}body{margin:0;background:var(--ink);color:var(--paper);font-family:var(--b);font-size:15px}
+.wrap{max-width:54rem;margin:0 auto;padding:2rem 1.2rem}
+a{color:var(--amber)}
+h1{font-family:var(--d);font-size:2.2rem;text-transform:uppercase;margin:0}
+.sub{font-family:var(--m);font-size:.66rem;letter-spacing:.2em;text-transform:uppercase;color:var(--grn);margin:.2rem 0 .2rem}
+.back{font-family:var(--m);font-size:.72rem;text-decoration:none;color:var(--muted)}
+.back:hover{color:var(--amber)}
+.boundary{border:1px solid var(--grn2);background:#0f2019;color:#bff0d8;font-size:.78rem;
+padding:.7rem .9rem;border-radius:4px;margin:1rem 0 1.4rem;line-height:1.45}
+.card{background:var(--panel);border:1px solid var(--line);padding:1.1rem 1.3rem;margin:0 0 1rem}
+.card h2{font-family:var(--d);font-size:1.2rem;text-transform:uppercase;margin:0 0 .7rem;color:var(--amber)}
+label.fld{display:block;font-family:var(--m);font-size:.68rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:.6rem 0 .2rem}
+input,textarea,select{background:var(--ink);border:1px solid var(--line);color:var(--paper);
+font-family:var(--m);font-size:.85rem;padding:.55rem .65rem;border-radius:2px;width:100%}
+input:focus,select:focus{outline:none;border-color:var(--amber)}
+.rowf{display:flex;gap:.8rem;flex-wrap:wrap}.rowf>div{flex:1;min-width:11rem}
+button{background:var(--amber);border:1px solid var(--amber);color:var(--ink);
+font-family:var(--d);font-weight:700;font-size:.9rem;text-transform:uppercase;letter-spacing:.04em;
+padding:.5rem 1.1rem;cursor:pointer;border-radius:2px;margin-top:.9rem}
+button:hover{background:transparent;color:var(--amber)}
+button.ghost{background:transparent;color:var(--muted);border-color:var(--line);font-size:.78rem}
+button.ghost:hover{color:var(--amber);border-color:var(--amber)}
+button.go{background:var(--grn);border-color:var(--grn);color:#06140c}
+button.go:hover{background:transparent;color:var(--grn)}
+button[disabled]{opacity:.5;cursor:not-allowed}
+.drop{display:flex;gap:.7rem;align-items:center;flex-wrap:wrap;font-family:var(--m);font-size:.74rem;color:var(--muted)}
+.drop input[type=file]{max-width:20rem;font-size:.72rem}
+.drop button{margin-top:0}
+.okmsg{color:var(--grn);font-size:.74rem;font-family:var(--m);margin-left:.3rem}
+.receipts{font-family:var(--m);font-size:.72rem;color:var(--grn);margin-top:.5rem;display:flex;flex-direction:column;gap:.15rem}
+.mono{font-family:var(--m);font-size:.72rem;color:var(--muted)}
+.stat{display:flex;gap:1.4rem;flex-wrap:wrap;font-family:var(--m);font-size:.8rem;margin:.4rem 0}
+.stat b{color:var(--paper);font-size:1.3rem;font-family:var(--d)}
+.flag{border-left:3px solid var(--amber2);background:var(--panel2);padding:.5rem .7rem;margin:.5rem 0;font-size:.76rem}
+.flag.bad{border-color:#ff8a5d}
+.flag ul{margin:.3rem 0 0;padding-left:1.1rem;font-family:var(--m);font-size:.7rem;color:var(--muted)}
+.prov{border:1px solid var(--grn2);background:#0f2019;padding:.7rem .9rem;margin-top:.8rem;border-radius:4px}
+.prov h3{font-family:var(--d);text-transform:uppercase;font-size:.95rem;color:var(--grn);margin:0 0 .4rem}
+.prov .pi{font-family:var(--m);font-size:.74rem;color:#cfeede;padding:.18rem 0}
+.prov .pid{color:var(--grn);font-weight:600}
+.pill{font-family:var(--m);font-size:.6rem;letter-spacing:.06em;text-transform:uppercase;border:1px solid var(--line);color:var(--muted);padding:.12em .5em;border-radius:2px;margin-left:.4rem}
+.empty{color:var(--muted);font-family:var(--m);font-size:.8rem}
+.step{font-family:var(--m);font-size:.62rem;letter-spacing:.14em;text-transform:uppercase;color:var(--amber);margin-bottom:.2rem}
+.gate{font-size:.76rem;color:var(--muted);margin-top:.5rem;line-height:1.45}
+</style></head><body><div class="wrap">
+<a class="back" href="/">← Web Studio dashboard</a>
+<h1>Marketplace Import</h1><p class="sub">Build from an owner-authorized Etsy / eBay export — no scrape</p>
+<div class="boundary"><b>Boundary.</b> <span id="boundary"></span></div>
+
+<div class="card"><h2>New client from export</h2>
+<form onsubmit="return newImport(event)">
+  <div class="rowf">
+    <div><label class="fld">Client / shop name</label><input name="name" placeholder="Acme Ceramics" required></div>
+    <div><label class="fld">Platform</label><select name="platform"><option value="etsy">Etsy</option><option value="ebay">eBay</option></select></div>
+    <div><label class="fld">Whose shop</label><select name="owner"><option value="self">My own shop</option><option value="client">A client's shop</option></select></div>
+  </div>
+  <button>Create import client</button>
+</form>
+<div style="margin-top:1rem"><label class="fld">…or pick an existing import client</label>
+  <select id="picker" onchange="selectClient(this.value)"><option value="">—</option></select></div>
+</div>
+
+<div id="work"></div>
+</div>
+<script>
+async function api(path, body){
+  const r = await fetch(path, body ? {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)} : undefined);
+  if(r.status===401){ document.body.innerHTML='<p style="font-family:monospace;color:#ffb000;padding:2rem">401 — reopen with ?key=&lt;token&gt;</p>'; throw 0; }
+  return r.json();
+}
+function esc(s){ return (s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+let SEL='', BUILT='';
+const receipts=[];   // ephemeral per-upload receipts for the current client
+
+async function loadPicker(){
+  const r=await api('/api/import/clients'); const sel=document.getElementById('picker');
+  const cur=SEL;
+  sel.innerHTML='<option value="">—</option>'+(r.clients||[]).map(c=>`<option value="${c.slug}">${esc(c.name)} · ${esc((c.catalog||{}).source||'')} · ${esc((c.catalog||{}).owner||'')}</option>`).join('');
+  if(cur) sel.value=cur;
+}
+async function newImport(e){ e.preventDefault();
+  const f=e.target; const r=await api('/api/import/new',{name:f.name.value,platform:f.platform.value,owner:f.owner.value});
+  if(r.error){ alert('Could not create: '+r.error); return false; }
+  f.reset(); await loadPicker(); document.getElementById('picker').value=r.slug; selectClient(r.slug); return false; }
+
+// The upload FORMS are built ONCE per client and never re-rendered by the poll — so a staged file
+// is never wiped (the old refresh-wipe bug). Only #live (data read from disk) refreshes on the tick.
+function selectClient(slug){
+  if(!slug){ SEL=''; document.getElementById('work').innerHTML=''; return; }
+  if(slug===BUILT){ refreshLive(); return; }
+  SEL=slug; BUILT=slug; receipts.length=0;
+  document.getElementById('work').innerHTML=`
+    <div class="card"><h2>1 · Listings export (CSV)</h2>
+      <p class="mono">The seller's own Etsy/eBay listings export. Etsy: Shop Manager → Settings → Options → Download Data → "Currently for sale listings". eBay: Seller Hub → Listings → download active listings. Platform auto-detected from the headers.</p>
+      <form class="drop" onsubmit="return uploadCsv(event)">
+        <input type="file" accept=".csv,text/csv" required>
+        <button class="ghost">Upload CSV</button>
+        <span class="okmsg" id="csvmsg"></span>
+      </form>
+    </div>
+    <div class="card"><h2>2 · Product photos</h2>
+      <p class="mono">The seller's OWN authorized photos — matched to products by SKU / listing-id / filename. Largest available; never upscaled; products with none get a type-led card. Pick many files, or a .zip.</p>
+      <form class="drop" onsubmit="return uploadPhotos(event)">
+        <input type="file" accept="image/*,.zip" multiple required>
+        <button class="ghost">Upload photos</button>
+        <span class="okmsg" id="photomsg"></span>
+      </form>
+      <div class="receipts" id="receipts"></div>
+    </div>
+    <div class="card"><h2>3 · Import preview &amp; build</h2><div id="live"><p class="empty">Loading…</p></div></div>`;
+  refreshLive();
+}
+async function uploadCsv(e){ e.preventDefault();
+  const f=e.target, file=f.querySelector('input[type=file]').files[0]; if(!file) return false;
+  const content=await file.text();
+  const r=await api('/api/import/upload-csv',{slug:SEL,filename:file.name,content});
+  const m=document.getElementById('csvmsg');
+  if(r.error){ m.style.color='#ff8a5d'; m.textContent='✗ '+r.error; }
+  else { m.style.color=''; m.textContent='received ✓ '+r.received+' — '+r.summary.products+' products'; f.reset(); refreshLive(); }
+  return false; }
+function readDataURL(file){ return new Promise(res=>{ const fr=new FileReader(); fr.onload=()=>res(fr.result); fr.readAsDataURL(file); }); }
+async function uploadPhotos(e){ e.preventDefault();
+  const f=e.target, files=[...f.querySelector('input[type=file]').files]; if(!files.length) return false;
+  const m=document.getElementById('photomsg'); m.style.color=''; let n=0;
+  for(const file of files){ m.textContent='uploading '+(++n)+'/'+files.length+'…';
+    const b64=await readDataURL(file);
+    const r=await api('/api/import/upload-photo',{slug:SEL,filename:file.name,b64});
+    if(r.error){ receipts.unshift('✗ '+file.name+' — '+r.error); }
+    else { (r.saved||[file.name]).forEach(s=>receipts.unshift('received ✓ '+s)); }
+    renderReceipts();
+  }
+  m.textContent='done — '+files.length+' file(s)'; f.reset(); refreshLive(); return false; }
+function renderReceipts(){ const el=document.getElementById('receipts'); if(el) el.innerHTML=receipts.slice(0,40).map(esc).map(s=>`<div>${s}</div>`).join(''); }
+async function refreshLive(){
+  if(!SEL) return;
+  const s=await api('/api/import/state?slug='+encodeURIComponent(SEL));
+  const el=document.getElementById('live'); if(!el) return;
+  if(s.error){ el.innerHTML='<p class="empty">'+esc(s.error)+'</p>'; return; }
+  const sm=s.summary;
+  let html='';
+  if(!s.csv_present || !sm){ html='<p class="empty">Upload the listings CSV to see the parsed catalog.</p>'; }
+  else if(!sm.ok){ html='<div class="flag bad">CSV did not parse: '+esc(sm.error||'')+'</div>'; }
+  else {
+    const noPhoto=sm.products_without_photo||[], unm=sm.unmatched_photos||[];
+    html+=`<div class="stat"><div><b>${sm.products}</b><br><span class="mono">products</span></div>
+      <div><b>${sm.with_photo}</b><br><span class="mono">with photo</span></div>
+      <div><b>${sm.assets_total}</b><br><span class="mono">photos uploaded</span></div>
+      <div><span class="pill">${esc(sm.platform)}</span><span class="pill">${esc(s.catalog.source||'')}</span><span class="pill">owner: ${esc(s.owner)}</span><span class="pill">DRAFT</span></div></div>`;
+    html+=`<div class="mono">matched — sku ${sm.match_breakdown.sku} · listing-id ${sm.match_breakdown['listing-id']} · filename ${sm.match_breakdown.filename}</div>`;
+    if(noPhoto.length) html+=`<div class="flag">⚠ ${noPhoto.length} product(s) have no matched photo (type-led card, or rename a photo to its SKU/listing-id and re-upload):<ul>${noPhoto.slice(0,20).map(esc).map(x=>`<li>${x}</li>`).join('')}${noPhoto.length>20?'<li>…</li>':''}</ul></div>`;
+    if(unm.length) html+=`<div class="flag">⚠ ${unm.length} uploaded photo(s) matched no product (check the filename vs SKU/listing-id):<ul>${unm.slice(0,20).map(esc).map(x=>`<li>${x}</li>`).join('')}${unm.length>20?'<li>…</li>':''}</ul></div>`;
+    if(!noPhoto.length && !unm.length) html+=`<div class="flag" style="border-color:var(--grn2)">✓ every product paired with a photo and every photo matched a product.</div>`;
+  }
+  if((s.provenance||[]).length){
+    html+=`<div class="prov"><h3>Provenance — client shop</h3>`+
+      s.provenance.map(p=>`<div class="pi"><span class="pid">${esc(p.id)}</span> ${esc(p.what)} <span class="pill">${esc(p.priority)}</span></div>`).join('')+
+      `<div class="pi" style="color:#9fbfaf;margin-top:.3rem">These record that the client authorized + supplied the export and owns the photos. The full set lands in the deliverables request when the build pipeline runs.</div></div>`;
+  }
+  const ready = sm && sm.ok && sm.products>0;
+  if(s.preview_url){ html+=`<div class="gate">Preview live: <a href="${esc(s.preview_url)}" target="_blank" rel="noopener">${esc(s.preview_url)} ↗</a></div>`; }
+  if(s.stage==='import-pending' && !s.busy){
+    html+=`<button class="go" ${ready?'':'disabled'} onclick="startBuild()">Build creative prototype ▶</button>
+      <div class="gate">Builds a complete <b>creative</b> ecommerce storefront from your imported catalog — full creative craft, <b>no blocky outlines</b>, the look derived from your own products (never a generic boxed template). Publishes a preview to review and send edits on. The full commerce backend (checkout, accounts, transactional email + integrations) comes after, via <b>Configure backend → Full build</b> on the <a href="/">dashboard</a>.</div>`;
+  } else if(s.busy){
+    html+=`<div class="gate">● Building the creative prototype… watch the row on the <a href="/">dashboard</a>. When it lands you can process edits and run the final backend build there.</div>`;
+  } else {
+    html+=`<div class="gate">Prototype stage: <b>${esc(s.stage)}</b>. Process edits, then run the final backend build (Configure backend → Full build — from this prototype) on the <a href="/">dashboard</a>.</div>`;
+  }
+  el.innerHTML=html;
+}
+async function startBuild(){
+  const r=await api('/api/import/build',{slug:SEL});
+  if(r.error){ alert('Cannot start: '+r.error); return; }
+  alert('Creative prototype build started for '+SEL+' from '+r.products+' imported products.\\nCreative mode, no blocky outlines, look derived from your products. Watch the row on the dashboard; when the preview lands you can process edits and run the final backend build there.');
+  refreshLive(); loadPicker();
+}
+document.getElementById('boundary').textContent = "Owner-authorized own-shop export only — mine OR a client's. The seller runs the export from their own Shop Manager / Seller Hub (or grants access). This is NEVER a scraper for other sellers' listings, and we never bot-scrape eBay/Etsy.";
+loadPicker();
+setInterval(()=>{ if(SEL) refreshLive(); }, 4000);
+</script></body></html>"""
+
 class H(BaseHTTPRequestHandler):
     def log_message(self, *a): pass
 
@@ -1951,6 +2790,53 @@ class H(BaseHTTPRequestHandler):
             return self._send("<p style='font-family:monospace;padding:2rem'>401 — open as /?key=&lt;your token&gt;</p>", code=401)
         if path == "/":
             self._send(PAGE, setcookie=True)
+        elif path == "/import":
+            self._send(IMPORT_PAGE, setcookie=True)
+        elif path == "/outreach":
+            self._send(OUTREACH_PAGE, setcookie=True)
+        elif path == "/api/outreach/state":
+            self._send(json.dumps(outreach_state()), "application/json")
+        elif path == "/api/outreach/file":
+            name = parse_qs(urlparse(self.path).query).get("name", [""])[0]
+            f = {"masterfile.csv": OUTREACH_MASTER, "drafted-emails.csv": OUTREACH_DRAFTS}.get(name)
+            if not f or not f.exists():
+                return self._send("not found", code=404)
+            b = f.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/csv; charset=utf-8")
+            self.send_header("Content-Disposition", f'attachment; filename="{name}"')
+            self.send_header("Content-Length", str(len(b)))
+            self.end_headers()
+            self.wfile.write(b)
+        elif path == "/api/outreach/report":
+            domain = parse_qs(urlparse(self.path).query).get("domain", [""])[0]
+            domain = re.sub(r"[^a-z0-9.-]", "", domain.lower())
+            f = OUTREACH_PROSPECTS / domain / "report.md"
+            if not domain or ".." in domain or not f.exists():
+                return self._send("no report for this domain (yet)", code=404)
+            self._send(f.read_text(), "text/plain")
+        elif path == "/api/import/state":
+            slug = slugify(parse_qs(urlparse(self.path).query).get("slug", [""])[0])
+            cdir = CLIENTS / slug
+            if not slug or not cdir.exists():
+                return self._send(json.dumps({"error": "no such client"}), "application/json", 404)
+            st = read_status(cdir)
+            cat = st.get("catalog", {}) or {}
+            csvf = cdir / "02-intake" / "marketplace-export.csv"
+            self._send(json.dumps({
+                "slug": slug, "name": st.get("name", slug), "stage": st.get("stage", ""),
+                "catalog": cat, "owner": cat.get("owner", "self"),
+                "csv_present": csvf.exists(),
+                "summary": marketplace_summary(cdir) if csvf.exists() else None,
+                "provenance": IMPORT_PROVENANCE if cat.get("owner") == "client" else [],
+                "boundary": IMPORT_BOUNDARY, "modes": list(BUILD_MODES.keys()),
+                "preview_url": st.get("preview_url", ""),
+                "busy": slug in TASKS,
+            }), "application/json")
+        elif path == "/api/import/clients":
+            # marketplace-import clients only, for the page's selector
+            out = [c for c in list_clients() if (c.get("catalog") or {}).get("source")]
+            self._send(json.dumps({"clients": out}), "application/json")
         elif path == "/api/clients":
             with LOCK:
                 running, queued = len(RUNNING), len(QUEUE)
@@ -2048,6 +2934,123 @@ class H(BaseHTTPRequestHandler):
             target.write_text(content)
             bump(cdir, msg=f"uploaded {dest}/{fname} ({len(content)} chars) via dashboard")
             return self._send(json.dumps({"ok": True, "path": f"02-intake/{dest}/{fname}"}), "application/json")
+        elif path == "/api/outreach/upload":
+            fname = Path(d.get("filename", "") or "prospects.csv").name
+            b64 = d.get("b64", "")
+            if not b64:
+                return self._send(json.dumps({"error": "no file content"}), "application/json", 400)
+            try:
+                raw = base64.b64decode(b64.split(",", 1)[-1])
+                state = create_outreach_run(fname, raw)
+            except ValueError as e:
+                return self._send(json.dumps({"error": str(e)}), "application/json", 400)
+            except Exception as e:
+                return self._send(json.dumps({"error": f"could not parse {fname}: {str(e)[:160]}"}), "application/json", 400)
+            counts = {}
+            for r in state["rows"]:
+                counts[r["status"]] = counts.get(r["status"], 0) + 1
+            return self._send(json.dumps({"ok": True, "run_id": state["run_id"],
+                                          "mapping": state["mapping"], "total": len(state["rows"]),
+                                          "counts": counts, "pacing_s": OUTREACH_PACING_S}), "application/json")
+        elif path == "/api/outreach/start":
+            run_id = re.sub(r"[^0-9-]", "", d.get("run_id", ""))
+            st = read_outreach_run(run_id)
+            if not st:
+                return self._send(json.dumps({"error": "no such run"}), "application/json", 404)
+            if not any(r["status"] in ("pending", "active") for r in st["rows"]):
+                return self._send(json.dumps({"error": "nothing left to process in this run"}), "application/json", 400)
+            with TASK_LOCK:
+                if OUTREACH_KEY in TASKS:
+                    return self._send(json.dumps({"error": "an outreach run is already in progress"}), "application/json", 409)
+                TASKS[OUTREACH_KEY] = {"kind": "outreach run", "label": run_id, "started": now(),
+                                       "tail": [], "proc": None}
+            OUTREACH_STOP.clear()
+            # any row left 'active' by a crash/stop resumes as pending
+            for r in st["rows"]:
+                if r["status"] == "active":
+                    r["status"] = "pending"
+            st["note"] = ""
+            write_outreach_run(st)
+            threading.Thread(target=outreach_runner, args=(run_id,), daemon=True).start()
+            return self._send(json.dumps({"ok": True}), "application/json")
+        elif path == "/api/outreach/stop":
+            OUTREACH_STOP.set()
+            return self._send(json.dumps({"ok": True, "note": "stopping after the current row"}), "application/json")
+        elif path == "/api/import/new":
+            # Create a marketplace-migration client (Etsy/eBay export instead of a scrape). SYSTEM.md §1a.
+            name = (d.get("name", "") or "").strip()
+            platform = d.get("platform", ""); owner = d.get("owner", "")
+            if not name:
+                return self._send(json.dumps({"error": "client name is required"}), "application/json", 400)
+            slug, err = new_import_client(name, platform, owner)
+            if err:
+                return self._send(json.dumps({"error": err}), "application/json", 400)
+            return self._send(json.dumps({"ok": True, "slug": slug}), "application/json")
+        elif path == "/api/import/upload-csv":
+            slug = slugify(d.get("slug", "")); cdir = CLIENTS / slug
+            if not cdir.exists():
+                return self._send(json.dumps({"error": "no such client"}), "application/json", 404)
+            content = d.get("content", "")
+            fname = Path(d.get("filename", "") or "export.csv").name
+            if not content.strip():
+                return self._send(json.dumps({"error": "empty CSV"}), "application/json", 400)
+            (cdir / "02-intake" / "marketplace-export.csv").write_text(content)
+            summary = marketplace_summary(cdir)
+            if not summary.get("ok"):
+                bump(cdir, msg=f"marketplace CSV upload FAILED to parse: {summary.get('error','')}")
+                return self._send(json.dumps({"error": "could not parse CSV: " + str(summary.get("error", "")),
+                                              "received": fname}), "application/json", 400)
+            bump(cdir, msg=f"marketplace export imported ({fname}) — {summary['products']} products, "
+                           f"{summary['with_photo']} with photos [{summary['platform']}]")
+            return self._send(json.dumps({"ok": True, "received": fname, "summary": summary}), "application/json")
+        elif path == "/api/import/upload-photo":
+            slug = slugify(d.get("slug", "")); cdir = CLIENTS / slug
+            if not cdir.exists():
+                return self._send(json.dumps({"error": "no such client"}), "application/json", 404)
+            fname = Path(d.get("filename", "") or "").name
+            b64 = d.get("b64", "")
+            if not fname or not b64:
+                return self._send(json.dumps({"error": "filename and b64 content required"}), "application/json", 400)
+            try:
+                raw = base64.b64decode(b64.split(",", 1)[-1])
+            except Exception as e:
+                return self._send(json.dumps({"error": f"bad base64: {e}"}), "application/json", 400)
+            saved, err = save_import_photos(cdir, fname, raw)
+            if err:
+                return self._send(json.dumps({"error": err, "received": fname}), "application/json", 400)
+            bump(cdir, msg=f"marketplace photos received: {', '.join(saved[:6])}"
+                           + (f" (+{len(saved)-6} more)" if len(saved) > 6 else ""))
+            return self._send(json.dumps({"ok": True, "received": fname, "saved": saved}), "application/json")
+        elif path == "/api/import/build":
+            # Build a CREATIVE ecommerce prototype straight from the imported catalog (the marketplace
+            # design spec mandates creative + no-blocky-outlines). Produces 03-site + a published
+            # preview; from there the client is an ordinary prototype-stage ecommerce client — edits and
+            # the final backend build (Configure backend -> Full build) apply on the dashboard.
+            slug = slugify(d.get("slug", "")); cdir = CLIENTS / slug
+            if not cdir.exists():
+                return self._send(json.dumps({"error": "no such client"}), "application/json", 404)
+            summary = marketplace_summary(cdir)
+            if not summary.get("ok") or summary.get("products", 0) < 1:
+                return self._send(json.dumps({"error": "import a CSV with at least one product first"}), "application/json", 400)
+            cat = read_status(cdir).get("catalog", {}) or {}
+            specf = cdir / "02-intake" / "specs" / "marketplace-creative-build.md"
+            if not specf.exists():    # defensive: re-author for clients created before this existed
+                platform = (cat.get("source", "") or "etsy-export").replace("-export", "") or "etsy"
+                specf.write_text(marketplace_design_spec(slug, platform, cat.get("owner", "self")))
+            set_design_mode(cdir, "creative", "claude")
+            with TASK_LOCK:
+                if slug in TASKS:
+                    return self._send(json.dumps({"error": "a Claude task is already running for this client"}), "application/json", 409)
+                TASKS[slug] = {"kind": "creative prototype", "label": "creative prototype (marketplace import)",
+                               "started": now(), "tail": [], "proc": None}
+            bump(cdir, msg=f"CREATIVE PROTOTYPE build started from marketplace import "
+                           f"({summary['products']} products, {summary['with_photo']} with photos) — "
+                           f"creative mode, against blocky outlines")
+            threading.Thread(target=run_advance,
+                             args=(slug, import_build_runbook(slug), "creative prototype", "import_build_failed"),
+                             daemon=True).start()
+            return self._send(json.dumps({"ok": True, "products": summary["products"],
+                                          "design_mode": "creative"}), "application/json")
         elif path == "/api/add-edit":
             slug = slugify(d.get("slug", ""))
             ok, res = create_edit(slug, d.get("text", ""), "typed")
