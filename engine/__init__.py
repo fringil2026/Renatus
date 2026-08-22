@@ -85,7 +85,7 @@ from .orchestration import (
     run_finish,
     run_intake_pack,
 )
-from .publish import MockPublisher, Publisher
+from .publish import MockPublisher, Publisher, UnconfiguredPublisher, WranglerPublisher
 from .runner import InlineRunner, Runner, ThreadRunner
 from .runs import FilesystemRunStore, InMemoryRunStore, Run, RunStatus, RunStore
 from .sql_store import InMemoryArtifactStore, SqlProjectStore, SqlRunStore
@@ -151,6 +151,8 @@ __all__ = [
     "ProjectExists",
     "ProjectStore",
     "Publisher",
+    "UnconfiguredPublisher",
+    "WranglerPublisher",
     "Report",
     "ReportExists",
     "Run",

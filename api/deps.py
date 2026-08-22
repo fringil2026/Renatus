@@ -17,12 +17,22 @@ from engine import (
     Tenant,
     ThreadRunner,
 )
-from engine.publish import Publisher, UnconfiguredPublisher
+from engine.publish import Publisher, UnconfiguredPublisher, WranglerPublisher
 
 from .core import Application
 from .tenancy import TenantRouter
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
+
+
+def _default_publisher(root: Path) -> Publisher:
+    """Pick the publisher from the environment. ``WS_PUBLISHER=wrangler`` turns on the real
+    Cloudflare Pages deploy (task 4.7) over ``<root>/<slug>/03-site/dist`` — requires ``wrangler`` on
+    PATH + an authed Cloudflare account. Anything else (default) stays ``UnconfiguredPublisher`` so
+    the dev API never deploys. ``wrangler`` runs from the repo root, as ``studio.py`` does."""
+    if os.environ.get("WS_PUBLISHER", "").lower() == "wrangler":
+        return WranglerPublisher(root, cwd=_REPO_ROOT)
+    return UnconfiguredPublisher()
 
 
 def build_default_app(
@@ -50,7 +60,7 @@ def build_default_app(
     return Application(
         store,
         driver=driver,
-        publisher=publisher or UnconfiguredPublisher(),
+        publisher=publisher or _default_publisher(root),
         token=token if token is not None else os.environ.get("WS_API_TOKEN"),
         enforce_ownership=enforce_ownership,
         runner=runner,
@@ -78,7 +88,7 @@ def build_tenant_router(*, root: str | Path | None = None) -> TenantRouter:
         return Application(
             FilesystemProjectStore(troot),
             driver=driver,
-            publisher=UnconfiguredPublisher(),
+            publisher=_default_publisher(troot),
             token=None,  # the router already authenticated the tenant
             enforce_ownership=enforce_ownership,
             runner=ThreadRunner(FilesystemRunStore(troot)),
